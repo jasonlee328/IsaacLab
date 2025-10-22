@@ -1,0 +1,62 @@
+version: v2
+description: isaac-lab-push
+budget: ai2/robots
+tasks:
+- name: eval
+  replicas: 1
+  image:
+    beaker: jasonl/isaac-lab
+  command: ['/bin/bash', '-c']
+  arguments:
+  - >-
+    nvidia-smi && pwd && ls -la && 
+    source env_isaaclab/bin/activate && 
+    cd /weka/oe-training-default/jasonl/IsaacLab &&
+    echo "Y" | ./isaaclab.sh --install &&
+    echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/generate_checkpoint_videos.py \
+      --task Isaac-Lift-Cube-Franka-v0 \
+      --run_dir /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_lift/2025-10-18_00-58-35_lift_test \
+      --video_length 200 \
+      --headless \
+      --num_envs 1
+
+  datasets:
+  - mountPath: /weka/oe-training-default
+    source:
+      weka: oe-training-default
+  result:
+    path: /data/results
+  envVars:
+  - name: ALLENACT_DEBUG_VST_TIMEOUT
+    value: 2000
+  - name: ALLENACT_DEBUG
+    value: true
+  - name: NCCL_SOCKET_IFNAME
+    value: ib
+  - name: NCCL_TIMEOUT
+    value: 36000000
+  - name: WANDB_API_KEY
+    secret: WANDB_API_KEY
+  - name: WANDB_MODE
+    value: "online"
+  - name: WANDB_SILENT
+    value: "true"          # optional, suppress CLI prompts
+  - name: WANDB_CONSOLE
+    value: "off"  
+  - name: WANDB_USERNAME
+    value: "prior-ai2"
+  - name: TERM
+    value: "xterm"
+  - name: ACCEPT_EULA
+    value: "Y"
+
+  resources:
+    gpuCount: 1
+    memory: 100GiB
+  context:
+    priority: normal  
+    preemptible: false
+  constraints:
+    cluster: [ ai2/ceres-cirrascale, ai2/jupiter-cirrascale-2, ai2/saturn-cirrascale, ai2/neptune-cirrascale,  ai2/titan-cirrascale, ai2/rhea-cirrascale ]
+  hostNetworking: true
+  leaderSelection: true

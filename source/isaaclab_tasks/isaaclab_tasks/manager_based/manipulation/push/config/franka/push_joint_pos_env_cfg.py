@@ -13,6 +13,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from isaaclab_tasks.manager_based.manipulation.push.push_env_cfg import PushEnvCfg
+from isaaclab_tasks.manager_based.manipulation.push import mdp as push_mdp
 from isaaclab_tasks.manager_based.manipulation.stack import mdp
 from isaaclab_tasks.manager_based.manipulation.stack.mdp import franka_stack_events
 
@@ -35,7 +36,12 @@ class PushEventCfg:
         func=franka_stack_events.set_default_joint_pose,
         mode="reset",
         params={
+            # Updated pose to bring robot closer to cube area
             "default_pose": [0.0444, -0.1894, -0.1107, -2.5148, 0.0044, 2.3775, 0.6952, 0.0400, 0.0400],
+            # Joint angles: [j1, j2, j3, j4, j5, j6, j7, gripper_left, gripper_right]
+            # Modified to move 20cm FORWARD - extended reach pose
+            # "default_pose": [0.0,0.1,0.0,-2.9,0.0,3.5,-0.2,0.04,0.04],
+            
         },
     )
     
@@ -45,7 +51,7 @@ class PushEventCfg:
         mode="reset",
         params={
             "mean": 0.0,
-            "std": 0.02,  # Fixed 2cm std for joint randomization
+            "std": 0.01,  # Fixed 2cm std for joint randomization
             "asset_cfg": SceneEntityCfg("robot"),
         },
     )
@@ -56,8 +62,8 @@ class PushEventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.47, 0.53),  # 3cm radius around center position (0.5)
-                "y": (-0.03, 0.03),  # 3cm radius 
+                "x": (0.50, 0.60),  
+                "y": (0.03, 0.07),  
                 "z": (0.0203, 0.0203),  # Fixed height on table
                 "yaw": (-0.5, 0.5)  # Small rotation randomization
             },
@@ -66,30 +72,43 @@ class PushEventCfg:
         },
     )
     
-    # # Randomize target position - will be configured in __post_init__
-    # randomize_target_position = EventTerm(
-    #     func=franka_stack_events.randomize_object_pose,
+    # Position end-effector in a "ready to push" pose (simple, no IK)
+    # This sets the robot to a predefined joint configuration that positions
+    # the EE extended forward and slightly above the table
+    # position_ee_ready = EventTerm(
+    #     func=push_mdp.position_ee_near_cube_simple,
     #     mode="reset",
     #     params={
-    #         "pose_range": {
-    #             "x": (-1, 1),  # Default range, will be updated
-    #             "y": (-1, 1),  # Default range, will be updated
-    #             "z": (0.0203, 0.0203),  # Fixed height on table
-    #             "yaw": (0.0, 0.0)  # No rotation for target
-    #         },
-    #         "min_separation": 0.0,
-    #         "asset_cfgs": [SceneEntityCfg("target")],
+    #         "robot_cfg": SceneEntityCfg("robot"),
+    #         "joint_positions": None,  # Use default "ready" pose
+    #         "randomize_joints": True,  # Add variety
+    #         "joint_noise_std": 0.05,  # 0.05 radians (~3 degrees) randomization
+    #         "debug": True,  # Enable debug output
     #     },
     # )
+    
+    # Alternative: Use IK-based positioning (more accurate but slower)
+    # Uncomment this and comment out position_ee_ready above to use IK
+    # position_ee_near_cube = EventTerm(
+    #     func=push_mdp.position_ee_near_cube_ik,
+    #     mode="reset",
+    #     params={
+    #         "robot_cfg": SceneEntityCfg("robot"),
+    #         "cube_cfg": SceneEntityCfg("cube"),
+    #         "ee_frame_cfg": SceneEntityCfg("ee_frame"),
+    #         "offset_range": (-0.01, 0.0, 0.02),
+    #         "offset_std": (0.01, 0.01, 0.01),
+    #         "ik_iterations": 50,
+    #         "ik_dt": 0.01,
+    #         "debug": True,
+    #     },
+    # )
+    
 
 
 @configclass
 class FrankaPushCubeEnvCfg(PushEnvCfg):
     """Configuration for Franka cube pushing task with sparse rewards."""
-    
-    # Task-specific parameters
-    target_spawn_radius: float = 0.50  # Default 15cm radius around cube for target spawn
-    target_goal_radius: float = 0.05   # Default 5cm radius for goal region
     
     def __post_init__(self):
         # post init of parent
@@ -98,25 +117,36 @@ class FrankaPushCubeEnvCfg(PushEnvCfg):
         # Set push-specific events
         self.events = PushEventCfg()
         
-        # Update target spawn range based on parameters
-        # Assuming cube spawns around (0.5, 0.0)
-        # self.events.randomize_target_position.params["pose_range"]["x"] = (
-        #     0.5 - self.target_spawn_radius, 
-        #     0.5 + self.target_spawn_radius
-        # )
-        # self.events.randomize_target_position.params["pose_range"]["y"] = (
-        #     0.0 - self.target_spawn_radius,
-        #     0.0 + self.target_spawn_radius
-        # )
-        
-        # Update sparse reward threshold with our goal radius
-        self.rewards.reaching_goal.params["threshold"] = self.target_goal_radius
-        
-        # Set Franka as robot
+
+        # Set Franka as robot with custom initial joint positions
         self.scene.robot = FRANKA_PANDA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.robot.spawn.semantic_tags = [("class", "robot")]
         
+        # Override default joint positions to match our "ready to push" pose
+        # This ensures the robot starts in a good position even without the event
+        # self.scene.robot.init_state.joint_pos = {
+        #     "panda_joint1": 0.0,      # base rotation
+        #     "panda_joint2": 0.2,     # shoulder forward
+        #     "panda_joint3": 0.0,      # elbow rotation
+        #     "panda_joint4": -1.1,     # elbow bend
+        #     "panda_joint5": 0.0,      # wrist rotation
+        #     "panda_joint6": 2.1,      # wrist bend
+        #     "panda_joint7": 0.785,    # flange rotation (45 degrees)
+        #     "panda_finger_joint.*": 0.04,  # gripper open
+        # }
+        self.scene.robot.init_state.joint_pos = {
+            "panda_joint1": 0.0444,      # base rotation
+            "panda_joint2": -0.1894,     # shoulder forward
+            "panda_joint3": -0.1107,      # elbow rotation
+            "panda_joint4": -2.5148,     # elbow bend
+            "panda_joint5": 0.0044,      # wrist rotation
+            "panda_joint6": 2.3775,      # wrist bend
+            "panda_joint7": 0.6952,    # flange rotation (45 degrees)
+            "panda_finger_joint.*": 0.0400,  # gripper open
+        }
         
+        
+        # [0.0444, -0.1894, -0.1107, -2.5148, 0.0044, 2.3775, 0.6952, 0.0400, 0.0400]
         # Set actions for the specific robot type (franka)
         self.actions.arm_action = mdp.JointPositionActionCfg(
             asset_name="robot", joint_names=["panda_joint.*"], scale=0.5, use_default_offset=True
@@ -147,7 +177,7 @@ class FrankaPushCubeEnvCfg(PushEnvCfg):
         self.scene.cube = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Cube",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[0.5, 0.0, 0.0203],  # Center position before randomization
+                pos=[0.4, 0.0, 0.0203],  # Closer to robot position before randomization
                 rot=[1, 0, 0, 0]
             ),
             spawn=UsdFileCfg(
@@ -164,25 +194,6 @@ class FrankaPushCubeEnvCfg(PushEnvCfg):
             solver_velocity_iteration_count=1,
             disable_gravity=True,  # Target shouldn't fall
         )
-        
-        # # Create a flat cylinder as target region indicator
-        # self.scene.target = RigidObjectCfg(
-        #     prim_path="{ENV_REGEX_NS}/Target",
-        #     init_state=RigidObjectCfg.InitialStateCfg(
-        #         pos=[0.5, 0.2, 0.0203],  # Default position before randomization
-        #         rot=[1, 0, 0, 0]
-        #     ),
-        #     spawn=sim_utils.CylinderCfg(
-        #         radius=self.target_goal_radius,
-        #         height=0.01,  # Very flat cylinder
-        #         visual_material=sim_utils.PreviewSurfaceCfg(
-        #             diffuse_color=(1.0, 0.0, 0.0),  # Red color
-        #             opacity=1.0,  # Fully opaque
-        #         ),
-        #         rigid_props=target_properties,
-        #         semantic_tags=[("class", "target")],
-        #     ),
-        # )
         
         
         # Frame transformer for end-effector tracking

@@ -1,0 +1,67 @@
+version: v2
+description: isaac-lab-push
+budget: ai2/robots
+tasks:
+- name: eval
+  replicas: 1
+  image:
+    beaker: jasonl/isaac-lab
+  command: ['/bin/bash', '-c']
+  arguments:
+  - >-
+    nvidia-smi && pwd && ls -la && 
+    source env_isaaclab/bin/activate && 
+    cd /weka/oe-training-default/jasonl/IsaacLab &&
+    echo "Y" | ./isaaclab.sh --install &&
+    echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/generate_checkpoint_videos.py \
+      --task Isaac-Push-Cube-Franka-Easy-v0 \
+      --run_dir /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_push_cube_easy/2025-10-20_20-24-40_oct19-push-cube-franka-easy-debug-constant-nonormalize-exploration04-batch-16-threshold3cm \
+      --video_length 200 \
+      --headless \
+      --num_envs 32
+      env.events.randomize_cube_position.params.pose_range.x=[0.63,0.67] \
+      env.events.randomize_cube_position.params.pose_range.y=[0.03,0.07] \
+      env.commands.ee_pose.ranges.pos_x=[-0.15,0.15] \
+      env.commands.ee_pose.ranges.pos_y=[-0.15,0.15] \
+      env.threshold=0.03
+
+  datasets:
+  - mountPath: /weka/oe-training-default
+    source:
+      weka: oe-training-default
+  result:
+    path: /data/results
+  envVars:
+  - name: ALLENACT_DEBUG_VST_TIMEOUT
+    value: 2000
+  - name: ALLENACT_DEBUG
+    value: true
+  - name: NCCL_SOCKET_IFNAME
+    value: ib
+  - name: NCCL_TIMEOUT
+    value: 36000000
+  - name: WANDB_API_KEY
+    secret: WANDB_API_KEY
+  - name: WANDB_MODE
+    value: "online"
+  - name: WANDB_SILENT
+    value: "true"          # optional, suppress CLI prompts
+  - name: WANDB_CONSOLE
+    value: "off"  
+  - name: WANDB_USERNAME
+    value: "prior-ai2"
+  - name: TERM
+    value: "xterm"
+  - name: ACCEPT_EULA
+    value: "Y"
+
+  resources:
+    gpuCount: 1
+    memory: 100GiB
+  context:
+    priority: urgent  
+    preemptible: true
+  constraints:
+    cluster: [ ai2/ceres-cirrascale, ai2/jupiter-cirrascale-2, ai2/saturn-cirrascale, ai2/neptune-cirrascale,  ai2/titan-cirrascale, ai2/rhea-cirrascale ]
+  hostNetworking: true
+  leaderSelection: true
