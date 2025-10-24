@@ -18,9 +18,9 @@ tasks:
       --headless \
       --logger wandb \
       --log_project_name Isaac-RL \
-      --num_envs 16384 \
+      --num_envs 2048 \
       --video --video_length 100 --video_interval 5000 \
-      --run_name Isaac-reorient-yaw90deg-newobservation-modified
+      --run_name Isaac-reorient-yaw90deg
 
 
   datasets:

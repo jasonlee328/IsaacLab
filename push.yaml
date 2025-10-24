@@ -1,5 +1,5 @@
 version: v2
-description: Isaac-reorient-yaw90deg
+description: Isaac-Push-Cube-Franka-cube5cm-target20cm-threshold30cm
 budget: ai2/robots
 tasks:
 - name: eval
@@ -14,14 +14,13 @@ tasks:
     cd /weka/oe-training-default/jasonl/IsaacLab &&
     echo "Y" | ./isaaclab.sh --install &&
     echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
-      --task Isaac-reorient-yaw90deg \
+      --task Isaac-Push-Cube-Franka-cube5cm-target20cm-threshold30cm \
       --headless \
       --logger wandb \
       --log_project_name Isaac-RL \
-      --num_envs 16384 \
+      --num_envs 2048 \
       --video --video_length 100 --video_interval 5000 \
-      --run_name Isaac-reorient-yaw90deg-newobservation-modified
-
+      --run_name Isaac-Push-Cube-Franka-cube5cm-target20cm-threshold30cm
 
   datasets:
   - mountPath: /weka/oe-training-default
@@ -58,7 +57,7 @@ tasks:
     memory: 100GiB
   context:
     priority: urgent  
-    preemptible: true
+    preemptible: false
   constraints:
     cluster: [ ai2/ceres-cirrascale, ai2/jupiter-cirrascale-2 ]
   hostNetworking: true

@@ -40,8 +40,8 @@ class FrankaPushCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     # Architecture: 3 layers of 256 units with Tanh activation
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=0.6,  # Corresponds to actor_logstd = -0.5
-        actor_obs_normalization=True,  # Disabled to match your architecture
-        critic_obs_normalization=True,  # Disabled to match your architecture
+        actor_obs_normalization=False,  # Disabled to match your architecture
+        critic_obs_normalization=False,  # Disabled to match your architecture
         actor_hidden_dims=[256, 256, 256],  # 3 layers of 256 units
         critic_hidden_dims=[256, 256, 256],  # 3 layers of 256 units
         activation="tanh",  # Tanh activation
@@ -65,44 +65,4 @@ class FrankaPushCubePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     )
 
 
-@configclass
-class FrankaPushCubeEasyPPORunnerCfg(FrankaPushCubePPORunnerCfg):
-    """Configuration for PPO training of Easy variant."""
-    
-    experiment_name = "franka_push_cube_easy"
-    max_iterations = 20000  # Easier task, fewer iterations needed
-    
-    # Same architecture as default (keeps consistency)
-    policy = RslRlPpoActorCriticCfg(
-        init_noise_std=0.6,
-        actor_obs_normalization=True,
-        critic_obs_normalization=True,
-        actor_hidden_dims=[256, 256, 256],
-        critic_hidden_dims=[256, 256, 256],
-        activation="tanh",
-    )
-
-
-@configclass
-class FrankaPushCubeHardPPORunnerCfg(FrankaPushCubePPORunnerCfg):
-    """Configuration for PPO train4ing of Hard variant."""
-    
-    experiment_name = "franka_push_cube_hard"
-    max_iterations = 10000  # Harder task, more iterations
-    
-    # Need more exploration for hard task
-    algorithm = RslRlPpoAlgorithmCfg(
-        value_loss_coef=1.0,
-        use_clipped_value_loss=True,
-        clip_param=0.2,
-        entropy_coef=0.02,  # Even higher entropy for more exploration
-        num_learning_epochs=5,
-        num_mini_batches=4,
-        learning_rate=3.0e-4,
-        schedule="adaptive",
-        gamma=0.99,
-        lam=0.95,
-        desired_kl=0.01,
-        max_grad_norm=1.0,
-    )
 

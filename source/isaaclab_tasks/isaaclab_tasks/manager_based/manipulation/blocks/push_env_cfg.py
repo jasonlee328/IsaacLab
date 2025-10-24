@@ -23,16 +23,12 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 # Import MDP functions from isaaclab core and stack task
 import isaaclab.envs.mdp as isaaclab_mdp
 from isaaclab_tasks.manager_based.manipulation.stack import mdp as stack_mdp
-from isaaclab_tasks.manager_based.manipulation.push import mdp as push_mdp
-from isaaclab_tasks.manager_based.manipulation.push.mdp import observations as push_observations
-from isaaclab_tasks.manager_based.manipulation.push.mdp import commands as push_commands
+from isaaclab_tasks.manager_based.manipulation.blocks import mdp as blocks_mdp
 from . import mdp
 from isaaclab_tasks.manager_based.manipulation.dexsuite.mdp import commands as dex_cmd
 
 
-##
-# Scene definition
-##
+
 @configclass
 class PushSceneCfg(InteractiveSceneCfg):
     """Configuration for the push scene with a robot, cube, and target.
@@ -95,91 +91,121 @@ class ObservationsCfg:
         # Robot observations
         joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
-        # actions = ObsTerm(func=isaaclab_mdp.last_action)
+        # actions = ObsTerm(func=isaaclab_mdp.last_action, params={"action_name": "gripper_action"})  # Add 1D gripper action
         gripper_pos = ObsTerm(func=stack_mdp.gripper_pos) 
         
-        ee_pos = ObsTerm(func=push_observations.ee_frame_pos_w)    # End-effector position
-        ee_quat = ObsTerm(func=push_observations.ee_frame_quat_w)  # End-effector quaternion
+        ee_pos = ObsTerm(func=blocks_mdp.ee_frame_pos_w)    # End-effector position
+        ee_quat = ObsTerm(func=blocks_mdp.ee_frame_quat_w)  # End-effector quaternion
         
         # Cube observations (relative to robot base)
-        cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
+        cube_pos = ObsTerm(func=blocks_mdp.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
         cube_rot = ObsTerm(func=isaaclab_mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("cube")})
         
         # Target observations (relative to robot base)
-        target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
-        target_rot = ObsTerm(func=push_observations.target_quat_rel, params={"command_name": "ee_pose"})
+        target_pos = ObsTerm(func=blocks_mdp.target_pos_rel, params={"command_name": "ee_pose"})
+        target_rot = ObsTerm(func=blocks_mdp.target_rot_rel, params={"command_name": "ee_pose"})
+        
         
 
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
 
+    # observation groups
     policy: PolicyCfg = PolicyCfg()
-    # critic: CriticCfg = CriticCfg()
 
 
 @configclass
 class CommandsCfg:
     """Command terms for the MDP.
     
-    Note: The threshold parameter controls all related distances and visualizations.
-    - min_distance = threshold + 0.01
-    - goal_pose_visualizer radius = threshold
-    - curr_pose_visualizer radius = 0.0 (always)
+    Note: The success_threshold will be automatically set in __post_init__ 
+    based on the reward threshold to maintain consistency.
     """
 
-    # Target position for the cube to reach (relative offsets from cube position)
-    ee_pose = dex_cmd.ObjectRelativePoseCommandCfg(
+    # Target position for the cube to reach using the new BlocksPoseCommand
+    ee_pose = blocks_mdp.BlocksPoseCommandCfg(
         asset_name="robot",  # Reference frame (robot base)
         object_name="cube",  # The object to generate commands for
         resampling_time_range=(10e9, 10e9),  # Never resample during episode
         debug_vis=True,  # Enable visualization of target and current positions
         position_only=True,  # Only generate position commands (no orientation)
         make_quat_unique=False,
-        min_distance=0.02,  # Will be updated in __post_init__ to threshold + 0.01
-        ranges=dex_cmd.ObjectRelativePoseCommandCfg.Ranges(
+        success_position_threshold=0.1,  # 10cm threshold for success
+        success_orientation_threshold=0.2,  # Not used when position_only=True
+        ranges=blocks_mdp.BlocksPoseCommandCfg.Ranges(
             # These are OFFSETS from cube's current position (not absolute positions!)
-            pos_x=(-0.10, 0.10),  # Target 15-35cm forward from cube
-            pos_y=(-0.10, 0.10),   # Target ±20cm lateral from cube
-            pos_z=(0.0, 0.0),    # Same height as cube (no vertical offset)
+            pos_x=(-0.30, 0.30),  # Target can be ±30cm from cube
+            pos_y=(-0.30, 0.30),  # Target can be ±30cm from cube
+            pos_z=(0.0, 0.0),     # Same height as cube (no vertical offset)
             roll=(0, 0),
             pitch=(0, 0),
             yaw=(0.0, 0),
-        )
+        ),
+        exclusion_ranges=blocks_mdp.BlocksPoseCommandCfg.ExclusionRanges(
+            # Exclude targets too close to the cube (within ±10cm in x and y)
+            pos_x=(-0.10, 0.10),  # Can't be within 10cm in x direction
+            pos_y=(-0.10, 0.10),  # Can't be within 10cm in y direction
+            pos_z=(0.0, 0.0),     # No z exclusion
+            roll=(0, 0),
+            pitch=(0, 0),
+            yaw=(0, 0),
+        ),
+        # Optional: Enable per-axis slicing for curriculum learning
+        slice_counts=blocks_mdp.BlocksPoseCommandCfg.SliceCounts(
+            # pos_x=5,  # Would create 5 discrete x position options
+            # pos_y=5,  # Would create 5 discrete y position options
+            # pos_z=1,  # Keep z fixed (only 1 option)
+            # roll=1, pitch=1, yaw=3,  # For orientation if position_only=False
+        ),
     )
 
 @configclass
 class RewardsCfg:
     """Reward specifications for the push MDP."""
-    # # SPARSE REWARD ONLY - Success when cube reaches target
-    # reaching_goal = RwdTerm(
-    #     func=push_mdp.object_reached_goal,
-    #     params={
-    #         "object_cfg": SceneEntityCfg("cube"),
-    #         "goal_cfg": "ee_pose",
-    #         "threshold": 0.03,  # Will be synchronized with commands.threshold in __post_init__
-    #     },
-    #     weight=1.0,  # Sparse reward: +1 for success
-    # )
-    
-    # # Action penalties for smoother control
-    # action_magnitude = RwdTerm(func=push_mdp.action_l2_clamped, weight=-1e-4)
-    
-    # action_rate = RwdTerm(func=push_mdp.action_rate_l2_clamped, weight=-1e-4)
-    
-    # joint_vel = RwdTerm(
-    #     func=push_mdp.joint_vel_l2_clamped,
-    #     weight=-1e-4,
-    #     params={"asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*"])},
-    # )
-    
-    # # Safety reward
-    # abnormal_robot = RwdTerm(func=push_mdp.abnormal_robot_state, weight=-1.0)
-    
-    # #Dense
-    
-    
+    # # safety rewards
 
+    action_magnitude = RwdTerm(func=blocks_mdp.action_l2_clamped, weight=-1e-4)
+
+    action_rate = RwdTerm(func=blocks_mdp.action_rate_l2_clamped, weight=-1e-4)
+
+    joint_vel = RwdTerm(
+        func=blocks_mdp.joint_vel_l2_clamped,
+        weight=-1e-3,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*"])},
+    )
+
+    abnormal_robot = RwdTerm(func=blocks_mdp.abnormal_robot_state, weight=-100.0)
+
+    # Dense reward based on exponential decay of cube-to-target distance
+    dense_success_reward = RwdTerm(
+        func=blocks_mdp.dense_success_reward, 
+        weight=0.1,
+        params={
+            "std": 0.1, 
+            "command_name": "ee_pose",
+            
+        }
+    )
+    
+    ee_asset_distance = RwdTerm(
+        func=blocks_mdp.ee_asset_distance_tanh,
+        weight=0.1,
+        params={
+            "ee_frame_cfg": SceneEntityCfg("ee_frame"),
+            "target_asset_cfg": SceneEntityCfg("cube"),
+            "std": 0.1,  
+        },
+    )
+    
+    # Sparse reward for reaching goal using command's success tracking
+    success_reward = RwdTerm(
+        func=blocks_mdp.success_reward,
+        params={
+            "command_name": "ee_pose",
+        },
+        weight=1.0,  
+    )
 
 
 @configclass
@@ -194,14 +220,13 @@ class TerminationsCfg:
         func=isaaclab_mdp.root_height_below_minimum,
         params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cube")}
     )
+    
+    abnormal_robot = DoneTerm(func=blocks_mdp.abnormal_robot_termination)
 
 
 @configclass
 class PushEnvCfg(ManagerBasedRLEnvCfg):
     """Base configuration for cube pushing tasks."""
-
-    # Central threshold parameter - tune this to adjust all related parameters
-    threshold: float = 0.10
 
     # Scene settings
     scene: PushSceneCfg = PushSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=False)
@@ -214,13 +239,12 @@ class PushEnvCfg(ManagerBasedRLEnvCfg):
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     
-    
-    ## Camera/Viewer settings for video recording
+    # Camera/Viewer settings for video recording
     viewer: ViewerCfg = ViewerCfg(
-        eye=(1.8, 1.2, 1.2),  # Camera position - higher up, looking down
-        lookat=(0.5, -0.2, 0.0),
+        eye=(2.2, 0.0, 0.5),  # Camera position - right side, zoomed out
+        lookat=(0.3, 0.0, 0.3),  # Camera target position (looking at robot/cube area)
         origin_type="env",  # Camera frame: "world", "env", "asset_root"
-        resolution=(1920, 1080),  # Video resolution (width, height)
+        resolution=(2560, 1440),  # Video resolution (width, height)
     )
     
     
@@ -228,6 +252,9 @@ class PushEnvCfg(ManagerBasedRLEnvCfg):
     commands = CommandsCfg()
     curriculum = None
     events = None  # Will be set by derived classes
+    
+    # Task-specific settings
+    position_only: bool = True  # Whether to only track position (not orientation) for success
 
     def __post_init__(self):
         """Post initialization."""
@@ -235,32 +262,21 @@ class PushEnvCfg(ManagerBasedRLEnvCfg):
         self.decimation = 10  # 10Hz control
         self.episode_length_s = 10.0  # 10 second episodes
         
+        # Update command settings based on task configuration
+        self.commands.ee_pose.position_only = self.position_only
+        
         # simulation settings
-        self.sim.dt =  0.01  # 100Hz
+        self.sim.dt = 0.01  # 100Hz
         self.sim.render_interval = self.decimation
         
-        # simulation settings
+        # physics settings
         self.sim.physx.bounce_threshold_velocity = 0.2
+        self.sim.physx.bounce_threshold_velocity = 0.01
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024
         self.sim.physx.friction_correlation_distance = 0.00625
         
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**23
-        threshold = self.threshold
-        
-
-        
-        
-        # Update min_distance to threshold + 0.01
-        self.commands.ee_pose.min_distance = threshold + 0.07
-        
-        # Update goal pose visualizer radius to threshold
-        self.commands.ee_pose.goal_pose_visualizer_cfg.markers["position_far"].radius = threshold
-        self.commands.ee_pose.goal_pose_visualizer_cfg.markers["position_near"].radius = threshold
-        
-        # Keep current pose visualizer radius at 0.0
-        self.commands.ee_pose.curr_pose_visualizer_cfg.markers["position_far"].radius = 0.0
-        self.commands.ee_pose.curr_pose_visualizer_cfg.markers["position_near"].radius = 0.0
-
-
-
- 
+        # self.sim.render.enable_dlssg = True
+        # self.sim.render.enable_ambient_occlusion = True
+        # self.sim.render.enable_reflections = True
+        # self.sim.render.enable_dl_denoiser = True

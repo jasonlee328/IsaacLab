@@ -16,6 +16,8 @@ from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab_tasks.manager_based.manipulation.push import mdp as push_mdp
 from isaaclab_tasks.manager_based.manipulation.push.mdp import observations as push_observations
 import isaaclab.envs.mdp as isaaclab_mdp
+
+from isaaclab_tasks.manager_based.manipulation.stack import mdp as stack_mdp
 ##
 # Register Gym environments.
 ##
@@ -44,10 +46,10 @@ class FrankaPushCubeEasyEnvCfg(push_joint_pos_env_cfg.FrankaPushCubeEnvCfg):
         # ============================================================
         
         # Success threshold (how close cube needs to be to target)
-        self.threshold = 0.05 
+        self.threshold = 0.03
         
         # Cube spawn position range (in meters, relative to robot base)
-        cube_x_range = (0.50, 0.60)  # Forward distance from robot
+        cube_x_range = (0.45, 0.55)  # Forward distance from robot
         cube_y_range = (0.03, 0.07)  # Lateral offset from robot center
         
         # Target command range (in meters, RELATIVE to cube position)
@@ -83,9 +85,7 @@ gym.register(
     disable_env_checker=True,
 )
 
-##
-# Hard variant - Customize all parameters here
-##
+
 @configclass
 class FrankaPushCubeHardEnvCfg(push_joint_pos_env_cfg.FrankaPushCubeEnvCfg):
     def __post_init__(self):
@@ -120,11 +120,11 @@ gym.register(
 class FrankaPushCubeCube5cmTarget20cmThreshold1cmEnvCfg(push_joint_pos_env_cfg.FrankaPushCubeEnvCfg):
     def __post_init__(self):
   
-        self.threshold = 0.01
-        cube_x_range = (0.55, 0.55)  # Forward distance from robot
-        cube_y_range = (0.05, 0.05)  # Lateral offset from robot center
-        target_x_range = (-0.10, 0.10)  # Forward/backward from cube (harder: farther targets)
-        target_y_range = (-0.10, 0.10)  # Left/right from cube
+        self.threshold = 0.03
+        cube_x_range = (0.70, 0.70)  # Forward distance from robot
+        cube_y_range = (0.0, 0.0)  # Lateral offset from robot center
+        target_x_range = (-0.20, 0.20)  # Forward/backward from cube (harder: farther targets)
+        target_y_range = (-0.20, 0.20)  # Left/right from cube
         
 
         super().__post_init__()
@@ -134,48 +134,22 @@ class FrankaPushCubeCube5cmTarget20cmThreshold1cmEnvCfg(push_joint_pos_env_cfg.F
         self.commands.ee_pose.ranges.pos_x = target_x_range
         self.commands.ee_pose.ranges.pos_y = target_y_range
         self.commands.ee_pose.success_threshold = self.threshold
-
-gym.register(
-    id="Isaac-Push-Cube-Franka-cube5cm-target20cm-threshold1cm",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
-    kwargs={
-        "env_cfg_entry_point": FrankaPushCubeCube5cmTarget20cmThreshold1cmEnvCfg,
-        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:FrankaPushCubePPORunnerCfg",
-    },
-    disable_env_checker=True,
-)
-
-
-@configclass
-class FrankaPushCubeCube5cmTarget20cmThreshold1cmEnvCfg(push_joint_pos_env_cfg.FrankaPushCubeEnvCfg):
-    def __post_init__(self):
-  
-        self.threshold = 0.01  
-        cube_x_range = (0.55, 0.55)  # Forward distance from robot
-        cube_y_range = (0.05, 0.05)  # Lateral offset from robot center
-        target_x_range = (-0.10, 0.10)  # Forward/backward from cube (harder: farther targets)
-        target_y_range = (-0.10, 0.10)  # Left/right from cube
+        self.commands.ee_pose.min_distance = 0.30
         
-
-        super().__post_init__()
-        
-        self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
-        self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
-        self.commands.ee_pose.ranges.pos_x = target_x_range
-        self.commands.ee_pose.ranges.pos_y = target_y_range
-        self.commands.ee_pose.success_threshold = self.threshold
         
         self.rewards.reaching_goal = RwdTerm(
-            func=push_mdp.object_reached_goal,
-            params={
-                "object_cfg": SceneEntityCfg("cube"),
-                "goal_cfg": "ee_pose",
-                "threshold": 0.01,  # Will be synchronized with commands.threshold in __post_init__
-            },
-            weight=1.0,  # Sparse reward: +1 for success
-        )
+                func=push_mdp.object_reached_goal,
+                params={
+                    "object_cfg": SceneEntityCfg("cube"),
+                    "goal_cfg": "ee_pose",
+                    "threshold": self.threshold,  # Will be synchronized with commands.threshold in __post_init__
+                },
+                weight=1.0,  # Sparse reward: +1 for success
+            )
+                
+
 gym.register(
-    id="Isaac-Push-Cube-Franka-cube5cm-target20cm-threshold1cm",
+    id="Isaac-Push-Cube-Franka-cube5cm-target20cm-threshold30cm",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     kwargs={
         "env_cfg_entry_point": FrankaPushCubeCube5cmTarget20cmThreshold1cmEnvCfg,
@@ -183,6 +157,7 @@ gym.register(
     },
     disable_env_checker=True,
 )
+
 
 
 @configclass
@@ -272,7 +247,14 @@ class ReorientObservationsCfg:
         """Observations for policy group - optimized for reorientation."""
         
         # Robot observations
-        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos)
+        # joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos)
+        
+        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        # actions = ObsTerm(func=isaaclab_mdp.last_action)
+        gripper_pos = ObsTerm(func=stack_mdp.gripper_pos) 
+        
+        
         ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
         ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
         
@@ -299,7 +281,6 @@ class ReorientObservationsCfg:
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
-            self.history_length = 1
     
 
     
@@ -311,18 +292,19 @@ class ReorientObservationsCfg:
 class FrankaReorientYaw90degEnvCfg(push_joint_pos_env_cfg.FrankaPushCubeEnvCfg):
     def __post_init__(self):
   
-        self.threshold = 0.01  # Position threshold: 1cm
-        self.orientation_threshold = 0.0175  # Orientation threshold: 1 degrees in radians
-        cube_x_range = (0.55, 0.55)  # Forward distance from robot
-        cube_y_range = (0.05, 0.05)  # Lateral offset from robot center
-        target_x_range = (0, 0)  # Forward/backward from cube (harder: farther targets)
-        target_y_range = (0, 0)  # Left/right from cube
-        yaw_range = (-1.57, 1.57)  # ±90 degrees in radians
+        self.threshold = 0.03  # Position threshold: 1cm
+        self.orientation_threshold = 0.052  # Orientation threshold: 1 degrees in radians
+        cube_x_range = (0.70, 0.70)  # Forward distance from robot
+        cube_y_range = (0.0, 0.0)  # Lateral offset from robot center
+        target_x_range = (-0.04, 0.04)  # Forward/backward from cube (harder: farther targets)
+        target_y_range = (-0.04, 0.04)  # Left/right from cube
+        yaw_range = (-3.14, 3.14)  # ±90 degrees in radians
         
+    
 
         super().__post_init__()
         
-        # Override with custom observation configuration for reorientation
+        # Override with custom observation configuration for reorientations
         self.observations = ReorientObservationsCfg()
         
         # Set cube spawn position
@@ -335,7 +317,7 @@ class FrankaReorientYaw90degEnvCfg(push_joint_pos_env_cfg.FrankaPushCubeEnvCfg):
         self.commands.ee_pose.ranges.yaw = yaw_range  # Sample yaw from -90 to +90 degrees
         self.commands.ee_pose.position_only = False  # Enable orientation commands
         self.commands.ee_pose.success_threshold = self.threshold
-        self.commands.ee_pose.min_distance = 0
+        self.commands.ee_pose.min_distance = 0.07
         
         
         self.rewards.distance_orientation_goal = RwdTerm(
