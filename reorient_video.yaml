@@ -16,7 +16,7 @@ tasks:
     echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
         --task Isaac-reorient-yaw90deg \
         --num_envs 1   \
-        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_push_cube/2025-10-24_06-44-16_Isaac-reorient-yaw90deg/model_2640.pt \
+        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_push_cube/2025-10-24_15-41-09_Isaac-reorient-yaw90deg/model_8760.pt \
         --video --video_length 1600 --headless
  
   datasets:

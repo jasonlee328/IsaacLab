@@ -525,11 +525,6 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
     def __post_init__(self):
         # IMPORTANT: Call parent __post_init__ FIRST to initialize everything
         super().__post_init__()
-        
-        print("\n" + "="*80)
-        print("🔧 Applying FrankaRobotiq2f85CustomOmniReorientEnvCfg customizations...")
-        print("="*80)
-        
         # Define thresholds and ranges
         threshold = 0.03  # Position threshold: 3cm
         orientation_threshold = 0.052  # Orientation threshold: ~3 degrees in radians
@@ -538,34 +533,16 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
         target_x_range = (-0.04, 0.04)  # Forward/backward from cube
         target_y_range = (-0.04, 0.04)  # Left/right from cube
         yaw_range = (-3.14, 3.14)  # ±180 degrees in radians
-        
-        # Override with custom observation configuration for reorientations
-        print(f"📊 Setting observations to ReorientObservationsCfg")
         self.observations = ReorientObservationsCfg()
         
-        # Set cube spawn position
-        print(f"📦 Setting cube spawn: x={cube_x_range}, y={cube_y_range}")
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
         self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
-        
-        # Set command ranges (target offsets from cube)
-        print(f"🎯 Setting command ranges:")
-        print(f"   - pos_x: {target_x_range}")
-        print(f"   - pos_y: {target_y_range}")
-        print(f"   - yaw: {yaw_range}")
-        print(f"   - position_only: False (orientation enabled)")
-        print(f"   - success_threshold: {threshold}")
         self.commands.ee_pose.ranges.pos_x = target_x_range
         self.commands.ee_pose.ranges.pos_y = target_y_range
         self.commands.ee_pose.ranges.yaw = yaw_range
         self.commands.ee_pose.position_only = False  # Enable orientation commands
         self.commands.ee_pose.success_threshold = threshold
         self.commands.ee_pose.min_distance = 0.07
-        
-        # Replace the reward with orientation-aware reward
-        print(f"🎁 Replacing reward: reaching_goal → distance_orientation_goal")
-        print(f"   - distance_threshold: {threshold}")
-        print(f"   - orientation_threshold: {orientation_threshold}")
         self.rewards.reaching_goal = None  # Remove position-only reward
         self.rewards.distance_orientation_goal = RwdTerm(
             func=push_mdp.distance_orientation_goal,
@@ -577,7 +554,3 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
             },
             weight=1.0,  # Sparse reward: +1 for success (both position and orientation)
         )
-        
-        print("="*80)
-        print("✅ FrankaRobotiq2f85CustomOmniReorientEnvCfg configuration complete!")
-        print("="*80 + "\n")
