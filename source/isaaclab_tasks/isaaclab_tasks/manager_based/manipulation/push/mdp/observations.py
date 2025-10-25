@@ -14,9 +14,49 @@ from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import math as math_utils
 
+import isaaclab.utils.math as math_utils
+from isaaclab.assets import Articulation, RigidObject
+from isaaclab.envs import ManagerBasedEnv, ManagerBasedRLEnv
+from isaaclab.managers import ManagerTermBase, ObservationTermCfg, SceneEntityCfg
+from isaaclab.sensors import Camera, RayCasterCamera, TiledCamera
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
+
+def target_asset_pose_in_root_asset_frame(
+    env: ManagerBasedEnv,
+    target_asset_cfg: SceneEntityCfg,
+    root_asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    target_asset_offset=None,
+    root_asset_offset=None,
+    use_axis_angle: bool = False,
+):
+    target_asset: RigidObject | Articulation = env.scene[target_asset_cfg.name]
+    root_asset: RigidObject | Articulation = env.scene[root_asset_cfg.name]
+
+    target_body_idx = 0 if isinstance(target_asset_cfg.body_ids, slice) else target_asset_cfg.body_ids
+    root_body_idx = 0 if isinstance(root_asset_cfg.body_ids, slice) else root_asset_cfg.body_ids
+
+    target_pos = target_asset.data.body_link_pos_w[:, target_body_idx].view(-1, 3)
+    target_quat = target_asset.data.body_link_quat_w[:, target_body_idx].view(-1, 4)
+    root_pos = root_asset.data.body_link_pos_w[:, root_body_idx].view(-1, 3)
+    root_quat = root_asset.data.body_link_quat_w[:, root_body_idx].view(-1, 4)
+
+    if root_asset_offset is not None:
+        root_pos, root_quat = root_asset_offset.combine(root_pos, root_quat)
+    if target_asset_offset is not None:
+        target_pos, target_quat = target_asset_offset.combine(target_pos, target_quat)
+
+    target_pos_b, target_quat_b = math_utils.subtract_frame_transforms(root_pos, root_quat, target_pos, target_quat)
+
+    if use_axis_angle:
+        axis_angle = math_utils.axis_angle_from_quat(target_quat_b)
+        return torch.cat([target_pos_b, axis_angle], dim=1)
+    else:
+        return torch.cat([target_pos_b, target_quat_b], dim=1)
+    
+    
 
 def ee_frame_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """End-effector position in robot base frame (relative to robot base)."""
@@ -38,6 +78,7 @@ def ee_frame_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEn
     )
     
     return ee_pos_rel
+
 
 
 def ee_frame_quat_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:

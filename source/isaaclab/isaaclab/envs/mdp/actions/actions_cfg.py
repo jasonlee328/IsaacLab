@@ -18,6 +18,8 @@ from . import (
     task_space_actions,
 )
 
+from isaaclab.envs.mdp.actions import default_joint_static_action
+
 ##
 # Joint actions.
 ##
@@ -374,3 +376,15 @@ class SurfaceGripperBinaryActionCfg(ActionTermCfg):
     """The command value to close the gripper. Defaults to 1.0."""
 
     class_type: type[ActionTerm] = surface_gripper_actions.SurfaceGripperBinaryAction
+
+
+@configclass
+class DefaultJointPositionStaticActionCfg(JointActionCfg):
+    """Configuration for the joint position action term.
+
+    See :class:`JointPositionAction` for more details.
+    """
+
+    class_type: type[ActionTerm] = default_joint_static_action.DefaultJointPositionStaticAction
+
+    use_default_offset: bool = True
