@@ -554,3 +554,35 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
             },
             weight=1.0,  # Sparse reward: +1 for success (both position and orientation)
         )
+
+
+@configclass
+class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainCfg):
+    """Configuration for push task with Franka + Robotiq gripper."""
+    
+    def __post_init__(self):
+        # IMPORTANT: Call parent __post_init__ FIRST to initialize everything
+        super().__post_init__()
+
+
+        threshold = 0.02  # Position threshold: 3cm
+        cube_x_range = (0.70, 0.70)  # Forward distance from robot
+        cube_y_range = (0.0, 0.0)  # Lateral offset from robot center
+        target_x_range = (-0.10, 0.10)  # Forward/backward from cube
+        target_y_range = (-0.10, 0.10)  # Left/right from cube
+        self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
+        self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
+        self.commands.ee_pose.ranges.pos_x = target_x_range
+        self.commands.ee_pose.ranges.pos_y = target_y_range
+        self.commands.ee_pose.success_threshold = threshold
+        self.commands.ee_pose.min_distance = 0.08
+        self.rewards.reaching_goal = None  # Remove position-only reward
+        self.rewards.reaching_goal = RwdTerm(
+            func=push_mdp.object_reached_goal,
+            params={
+                "object_cfg": SceneEntityCfg("cube"),
+                "goal_cfg": "ee_pose",
+                "threshold": threshold,
+            },
+            weight=1.0,  # Sparse reward: +1 for success (both position and orientation)
+        )
