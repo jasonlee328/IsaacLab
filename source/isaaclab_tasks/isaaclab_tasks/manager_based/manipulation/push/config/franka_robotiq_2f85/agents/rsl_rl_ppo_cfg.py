@@ -11,9 +11,8 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 @configclass
 class Base_PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 100
-    max_iterations = 20000
+    max_iterations = 40000
     save_interval = 100
-    resume = False
     experiment_name = "franka_robotiq_2f85"
     logger = "wandb"
     wandb_entity = "ai2-robotics"

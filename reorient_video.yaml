@@ -14,9 +14,9 @@ tasks:
     cd /weka/oe-training-default/jasonl/IsaacLab &&
     echo "Y" | ./isaaclab.sh --install &&
     echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
-        --task Isaac-reorient-yaw90deg \
+        --task Blocks-Robotiq2f85-CustomOmni-Reorient \
         --num_envs 1   \
-        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_push_cube/2025-10-24_15-41-09_Isaac-reorient-yaw90deg/model_8760.pt \
+        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_robotiq_2f85/2025-10-27_06-46-06_Blocks-Robotiq2f85-CustomOmni-Reorient-90-0cm-tcp-pat/model_1500.pt \
         --video --video_length 1600 --headless
  
   datasets:

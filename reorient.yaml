@@ -1,5 +1,5 @@
 version: v2
-description: Isaac-reorient-yaw90deg
+description: Blocks-Robotiq2f85-CustomOmni-Reorient
 budget: ai2/robots
 tasks:
 - name: eval
@@ -14,13 +14,13 @@ tasks:
     cd /weka/oe-training-default/jasonl/IsaacLab &&
     echo "Y" | ./isaaclab.sh --install &&
     echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
-      --task Isaac-reorient-yaw90deg \
+      --task Blocks-Robotiq2f85-CustomOmni-Reorient \
       --headless \
       --logger wandb \
       --log_project_name Isaac-RL \
       --num_envs 2048 \
-      --video --video_length 100 --video_interval 5000 \
-      --run_name Isaac-reorient-yaw90deg
+      --video --video_length 300 --video_interval 50000 \
+      --run_name Blocks-Robotiq2f85-CustomOmni-Reorient-180-3cm-tcp-pat
 
 
   datasets:

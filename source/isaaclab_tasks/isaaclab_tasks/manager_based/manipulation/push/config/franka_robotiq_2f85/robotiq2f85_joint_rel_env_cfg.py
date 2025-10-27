@@ -37,6 +37,7 @@ from isaaclab_assets.robots.franka import (
     FRANKA_ROBOTIQ_GRIPPER_CFG,
     FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG,
     FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_CFG,
+    FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG
 )  # isort: skip
 from . import actions
 @configclass
@@ -47,31 +48,13 @@ class RlStateSceneCfg(InteractiveSceneCfg):
     ee_frame: FrameTransformerCfg = FrameTransformerCfg(
         prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
         debug_vis=False,
-        visualizer_cfg=FRAME_MARKER_CFG.replace(prim_path="/Visuals/FrameTransformer"),
-        target_frames=[
-            FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_hand",
-                name="end_effector",
-                offset=OffsetCfg(
-                    pos=[0.0, 0.0, 0.1034],
-                ),
-            ),
-            # Robotiq gripper finger links (different from Panda gripper)
-            FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/Robotiq_2F_85_edit/Robotiq_2F_85/right_inner_finger",
-                name="tool_rightfinger",
-                offset=OffsetCfg(
-                    pos=(0.0, 0.0, 0.046),
-                ),
-            ),
-            FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/Robotiq_2F_85_edit/Robotiq_2F_85/left_inner_finger",
-                name="tool_leftfinger",
-                offset=OffsetCfg(
-                    pos=(0.0, 0.0, 0.046),
-                ),
-            ),
-        ],
+        visualizer_cfg=FRAME_MARKER_CFG.replace(
+            prim_path="/Visuals/FrameTransformer", 
+            markers={
+                "frame": FRAME_MARKER_CFG.markers["frame"].replace(scale=(0.08, 0.08, 0.08)),
+                "connecting_line": FRAME_MARKER_CFG.markers["connecting_line"]
+            }
+        ),
     )
 
     cube: RigidObjectCfg = RigidObjectCfg(
@@ -161,7 +144,7 @@ class CustomEventCfg:
         params={
             # Custom Robotiq gripper has 13 joints total (see GitHub #1299)
             "default_pose": [
-                0.0, 0.8, 0.0, -1.1, 0.0, 2.1, 0.785,  # 7 arm joints
+                0.0, 0.93, 0.0, -1.27, 0.0, 2.17, 0.0,  # 7 arm joints
                 0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
                 0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
                 0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
@@ -298,30 +281,36 @@ class FrankaRobotiq2f85RLStateCfg(ManagerBasedRLEnvCfg):
     
 
     def __post_init__(self):
-        self.decimation = 12
-        self.episode_length_s = 6.0
+        # self.decimation = 12
+        # self.episode_length_s = 6.0
+        self.decimation = 10  # 10Hz control
+        self.episode_length_s = 10.0  # 10 second episodes
         # simulation settings
-        self.sim.dt = 1 / 120.0
-
+        # self.sim.dt = 1 / 120.0
+        self.sim.dt =  0.01 
+        self.sim.render_interval = self.decimation
+        
         # Contact and solver settings
-        self.sim.physx.solver_type = 1
-        self.sim.physx.max_position_iteration_count = 192
-        self.sim.physx.max_velocity_iteration_count = 1
-        self.sim.physx.bounce_threshold_velocity = 0.02
-        self.sim.physx.friction_offset_threshold = 0.01
-        self.sim.physx.friction_correlation_distance = 0.0005
+        # self.sim.physx.solver_type = 1
+        # self.sim.physx.max_position_iteration_count = 192
+        # self.sim.physx.max_velocity_iteration_count = 1
+        # self.sim.physx.bounce_threshold_velocity = 0.02
+        # self.sim.physx.friction_offset_threshold = 0.01
+        # self.sim.physx.friction_correlation_distance = 0.0005
+        self.sim.physx.bounce_threshold_velocity = 0.2
+        self.sim.physx.friction_correlation_distance = 0.00625
 
         self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**23
-        self.sim.physx.gpu_max_rigid_contact_count = 2**23
-        self.sim.physx.gpu_max_rigid_patch_count = 2**23
-        self.sim.physx.gpu_collision_stack_size = 2**31
+        # self.sim.physx.gpu_max_rigid_contact_count = 2**23
+        # self.sim.physx.gpu_max_rigid_patch_count = 2**23
+        # self.sim.physx.gpu_collision_stack_size = 2**31
 
         # Render settings
-        self.sim.render.enable_dlssg = True
-        self.sim.render.enable_ambient_occlusion = True
-        self.sim.render.enable_reflections = True
-        self.sim.render.enable_dl_denoiser = True
+        # self.sim.render.enable_dlssg = True
+        # self.sim.render.enable_ambient_occlusion = True
+        # self.sim.render.enable_reflections = True
+        # self.sim.render.enable_dl_denoiser = True
         
         
 
@@ -428,7 +417,7 @@ class FrankaRobotiq2f85CustomOmniRelTrainCfg(FrankaRobotiq2f85RLStateCfg):
         # Use custom configurations for Omniverse-style pre-assembled USD
         self.events = CustomEventCfg()  # 13-joint structure
         self.actions = FrankaRobotiq2f85CustomRelativeAction()  # outer_knuckle_joint actions
-        self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.robot.spawn.semantic_tags = [("class", "robot")]
         # Override the default position from FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_CFG
         self.scene.robot.init_state.pos = (0.0, 0.0, 0.0)  # Reset to origin (table is at 0.5, 0, 0)
@@ -450,15 +439,15 @@ class FrankaRobotiq2f85CustomOmniRelTrainCfg(FrankaRobotiq2f85RLStateCfg):
         # Robotiq gripper configuration (Omniverse-style uses outer_knuckle_joints)
         self.gripper_joint_names = ["left_outer_knuckle_joint", "right_outer_knuckle_joint"]
         self.gripper_open_val = 0.0  # Robotiq opens at 0.0
-        self.gripper_threshold = 0.1  # Threshold for gripper state
+        self.gripper_threshold = 0.8  # Threshold for gripper state
         
         # Update FrameTransformer to use panda_link7 instead of panda_hand
         self.scene.ee_frame.target_frames = [
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_link7",  # Use link7 instead of panda_hand
+                prim_path="{ENV_REGEX_NS}/Robot/panda_link7",
                 name="end_effector",
                 offset=OffsetCfg(
-                    pos=[0.0, 0.0, 0.1034],  # Offset to gripper tip
+                    pos=[0.0, 0.0, 0.2418], 
                 ),
             ),
         ]
@@ -482,7 +471,7 @@ class ReorientObservationsCfg:
         joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
         # actions = ObsTerm(func=isaaclab_mdp.last_action)
-        gripper_pos = ObsTerm(func=stack_mdp.gripper_pos) 
+        # gripper_pos = ObsTerm(func=stack_mdp.gripper_pos) 
         
         
         ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
@@ -523,16 +512,16 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
     """Configuration for reorientation task with Franka + Robotiq gripper."""
     
     def __post_init__(self):
-        # IMPORTANT: Call parent __post_init__ FIRST to initialize everything
+
         super().__post_init__()
-        # Define thresholds and ranges
-        threshold = 0.03  # Position threshold: 3cm
-        orientation_threshold = 0.052  # Orientation threshold: ~3 degrees in radians
-        cube_x_range = (0.70, 0.70)  # Forward distance from robot
-        cube_y_range = (0.0, 0.0)  # Lateral offset from robot center
-        target_x_range = (-0.04, 0.04)  # Forward/backward from cube
-        target_y_range = (-0.04, 0.04)  # Left/right from cube
-        yaw_range = (-3.14, 3.14)  # ±180 degrees in radians
+
+        threshold = 0.01  
+        orientation_threshold = 0.0173  
+        cube_x_range = (0.725, 0.725) 
+        cube_y_range = (0.0, 0.0)  
+        target_x_range = (0.0, 0.0)  
+        target_y_range = (-0.0, 0.0) 
+        yaw_range = (-1.57, 1.57)  
         self.observations = ReorientObservationsCfg()
         
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
@@ -540,10 +529,10 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
         self.commands.ee_pose.ranges.pos_x = target_x_range
         self.commands.ee_pose.ranges.pos_y = target_y_range
         self.commands.ee_pose.ranges.yaw = yaw_range
-        self.commands.ee_pose.position_only = False  # Enable orientation commands
+        self.commands.ee_pose.position_only = False  
         self.commands.ee_pose.success_threshold = threshold
-        self.commands.ee_pose.min_distance = 0.07
-        self.rewards.reaching_goal = None  # Remove position-only reward
+        self.commands.ee_pose.min_distance = 0.0
+        self.rewards.reaching_goal = None  
         self.rewards.distance_orientation_goal = RwdTerm(
             func=push_mdp.distance_orientation_goal,
             params={
@@ -552,10 +541,57 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
                 "distance_threshold": threshold,
                 "orientation_threshold": orientation_threshold,
             },
-            weight=1.0,  # Sparse reward: +1 for success (both position and orientation)
+            weight=1.0, 
         )
 
 
+
+@configclass
+class PushObservationsCfg:
+    """Custom observation specifications for the reorientation task.
+    
+    This includes yaw angle and orientation delta observations that are more
+    suitable for learning rotation tasks compared to full quaternions.
+    """
+    
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for policy group - optimized for reorientation."""
+        
+        # Robot observations
+        # joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos)
+        
+        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        # actions = ObsTerm(func=isaaclab_mdp.last_action)
+        # gripper_pos = ObsTerm(func=stack_mdp.gripper_pos) 
+        
+        
+        ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
+        ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
+        
+        # Cube observations
+        cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
+        # Target observations
+        target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
+
+
+        
+        # Cube position relative to goal (frame-invariant)
+        cube_pos_goal = ObsTerm(
+            func=push_observations.cube_in_target_frame,
+            params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
+        )
+        
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+    
+
+    
+    # observation groups
+    policy: PolicyCfg = PolicyCfg()
+    
 @configclass
 class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainCfg):
     """Configuration for push task with Franka + Robotiq gripper."""
@@ -566,16 +602,17 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
 
 
         threshold = 0.02  # Position threshold: 3cm
-        cube_x_range = (0.70, 0.70)  # Forward distance from robot
+        cube_x_range = (0.725, 0.725)  # Forward distance from robot
         cube_y_range = (0.0, 0.0)  # Lateral offset from robot center
         target_x_range = (-0.10, 0.10)  # Forward/backward from cube
         target_y_range = (-0.10, 0.10)  # Left/right from cube
+        self.observations = PushObservationsCfg()
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
         self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
         self.commands.ee_pose.ranges.pos_x = target_x_range
         self.commands.ee_pose.ranges.pos_y = target_y_range
         self.commands.ee_pose.success_threshold = threshold
-        self.commands.ee_pose.min_distance = 0.08
+        self.commands.ee_pose.min_distance = 0.10
         self.rewards.reaching_goal = None  # Remove position-only reward
         self.rewards.reaching_goal = RwdTerm(
             func=push_mdp.object_reached_goal,

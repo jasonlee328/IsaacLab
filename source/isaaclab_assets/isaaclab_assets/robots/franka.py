@@ -209,7 +209,7 @@ FRANKA_ROBOTIQ_GRIPPER_CFG.actuators = {
 # This uses a pre-assembled USD with proper joint structure based on the community solution.
 
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG = FRANKA_PANDA_CFG.copy()
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.usd_path = "/home/jason/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd"
+FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.usd_path = "/weka/oe-training-default/jasonl/IsaacLab/Franka/Collected_franka_robotiq/franka_robotiq.usd"
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.variants = None  # Pre-assembled file, no variants needed
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.rigid_props.disable_gravity = True
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.init_state.joint_pos = {
@@ -274,7 +274,7 @@ Gripper Control:
 # Base articulation configuration (no actuators yet - robot agnostic)
 FRANKA_ROBOTIQ_BASE_ARTICULATION = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/home/jason/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
+        usd_path="/weka/oe-training-default/jasonl/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
         activate_contact_sensors=False,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
@@ -391,3 +391,55 @@ Gripper Control:
 - Open: outer_knuckle_joint = 0.0
 - Closed: outer_knuckle_joint = 0.8
 """
+
+FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG = FRANKA_ROBOTIQ_BASE_ARTICULATION.copy()
+FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.actuators = {
+    # Arm actuators with per-joint tuning (robot-specific parameters)
+    "arm": ImplicitActuatorCfg(
+        joint_names_expr=["panda_joint.*"],  # All 7 arm joints
+        stiffness={
+            "panda_joint1": 4.63,   # Base rotation - adapted from shoulder_pan
+            "panda_joint2": 5.41,   # Shoulder lift - adapted from shoulder_lift
+            "panda_joint3": 8.06,   # Elbow rotation - adapted from elbow
+            "panda_joint4": 7.28,   # Elbow bend - adapted from wrist_1
+            "panda_joint5": 8.04,   # Wrist rotation - adapted from wrist_2
+            "panda_joint6": 7.18,   # Wrist bend - adapted from wrist_3
+            "panda_joint7": 4.63,   # Flange rotation - adapted from shoulder_pan
+        },
+        damping={
+            "panda_joint1": 8.84,
+            "panda_joint2": 6.47,
+            "panda_joint3": 9.46,
+            "panda_joint4": 2.80,
+            "panda_joint5": 2.41,
+            "panda_joint6": 1.90,
+            "panda_joint7": 8.84,
+        },
+        velocity_limit_sim=3.14,  # rad/s (same as UR5E)
+        effort_limit_sim={
+            "panda_joint1": 87.0,   # Franka's effort limits
+            "panda_joint2": 87.0,
+            "panda_joint3": 87.0,
+            "panda_joint4": 87.0,
+            "panda_joint5": 12.0,
+            "panda_joint6": 12.0,
+            "panda_joint7": 12.0,
+        },
+    ), 
+    # Robotiq gripper actuators (pre-assembled USD uses outer_knuckle_joints)
+    "gripper": ImplicitActuatorCfg(
+        joint_names_expr=[".*_outer_knuckle_joint"],  # Main actuated joints
+        effort_limit_sim=200.0,
+        velocity_limit_sim=0.2,
+        stiffness=2e3,
+        damping=1e2,
+    ),
+    # Passive inner finger joints (compliant, minimal control)
+    "inner_finger": ImplicitActuatorCfg(
+        joint_names_expr=[".*_inner_finger_joint"],
+        effort_limit_sim=50.0,
+        velocity_limit_sim=10.0,
+        stiffness=0.2,
+        damping=0.001,
+    ),
+}

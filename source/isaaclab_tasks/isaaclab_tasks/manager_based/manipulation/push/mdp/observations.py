@@ -58,17 +58,62 @@ def target_asset_pose_in_root_asset_frame(
     
     
 
+# def ee_frame_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+#     """End-effector position in robot base frame (relative to robot base)."""
+#     # Get the robot asset
+#     robot: Articulation = env.scene[asset_cfg.name]
+    
+#     # Get end-effector body index (assuming it's the last body)
+#     ee_body_idx = robot.num_bodies - 1
+    
+#     # Get end-effector pose in world frame
+#     ee_pos_w = robot.data.body_pos_w[:, ee_body_idx]
+#     ee_quat_w = robot.data.body_quat_w[:, ee_body_idx]
+#     robot_pos_w = robot.data.root_pos_w
+#     robot_quat_w = robot.data.root_quat_w
+    
+#     # Convert to robot base frame (relative to robot base)
+#     ee_pos_rel, _ = math_utils.subtract_frame_transforms(
+#         robot_pos_w, robot_quat_w, ee_pos_w, ee_quat_w
+#     )
+    
+#     return ee_pos_rel
+
+
+
+# def ee_frame_quat_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+#     """End-effector orientation in robot base frame (relative to robot base)."""
+#     # Get the robot asset
+#     robot: Articulation = env.scene[asset_cfg.name]
+    
+#     # Get end-effector body index (assuming it's the last body)
+#     ee_body_idx = robot.num_bodies - 1
+    
+#     # Get end-effector pose in world frame
+#     ee_pos_w = robot.data.body_pos_w[:, ee_body_idx]
+#     ee_quat_w = robot.data.body_quat_w[:, ee_body_idx]
+#     robot_pos_w = robot.data.root_pos_w
+#     robot_quat_w = robot.data.root_quat_w
+    
+#     # Convert to robot base frame (relative to robot base)
+#     _, ee_quat_rel = math_utils.subtract_frame_transforms(
+#         robot_pos_w, robot_quat_w, ee_pos_w, ee_quat_w
+#     )
+    
+#     return ee_quat_rel
+
+
 def ee_frame_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
-    """End-effector position in robot base frame (relative to robot base)."""
-    # Get the robot asset
+    """End-effector position in robot base frame (relative to robot base) - uses FrameTransformer with TCP offset."""
+    # Get the FrameTransformer sensor (includes TCP offset!)
+    ee_frame = env.scene.sensors["ee_frame"]
+    
+    # Get TCP position in world frame (already includes the -0.210m offset)
+    ee_pos_w = ee_frame.data.target_pos_w[:, 0]  # First target frame is "end_effector"
+    ee_quat_w = ee_frame.data.target_quat_w[:, 0]
+    
+    # Get robot base pose
     robot: Articulation = env.scene[asset_cfg.name]
-    
-    # Get end-effector body index (assuming it's the last body)
-    ee_body_idx = robot.num_bodies - 1
-    
-    # Get end-effector pose in world frame
-    ee_pos_w = robot.data.body_pos_w[:, ee_body_idx]
-    ee_quat_w = robot.data.body_quat_w[:, ee_body_idx]
     robot_pos_w = robot.data.root_pos_w
     robot_quat_w = robot.data.root_quat_w
     
@@ -82,16 +127,16 @@ def ee_frame_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEn
 
 
 def ee_frame_quat_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
-    """End-effector orientation in robot base frame (relative to robot base)."""
-    # Get the robot asset
+    """End-effector orientation in robot base frame (relative to robot base) - uses FrameTransformer with TCP offset."""
+    # Get the FrameTransformer sensor (includes TCP offset!)
+    ee_frame = env.scene.sensors["ee_frame"]
+    
+    # Get TCP pose in world frame (already includes the -0.210m offset)
+    ee_pos_w = ee_frame.data.target_pos_w[:, 0]  # First target frame is "end_effector"
+    ee_quat_w = ee_frame.data.target_quat_w[:, 0]
+    
+    # Get robot base pose
     robot: Articulation = env.scene[asset_cfg.name]
-    
-    # Get end-effector body index (assuming it's the last body)
-    ee_body_idx = robot.num_bodies - 1
-    
-    # Get end-effector pose in world frame
-    ee_pos_w = robot.data.body_pos_w[:, ee_body_idx]
-    ee_quat_w = robot.data.body_quat_w[:, ee_body_idx]
     robot_pos_w = robot.data.root_pos_w
     robot_quat_w = robot.data.root_quat_w
     
