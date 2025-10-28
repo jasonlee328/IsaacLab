@@ -333,3 +333,144 @@ def position_ee_near_cube_ik(
         print(f"    Joint positions: {joint_pos[first_idx, :7].cpu().numpy()}")
         print("="*80 + "\n")
 
+
+def store_distractor_initial_positions(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    distractor_1_cfg: SceneEntityCfg,
+    distractor_2_cfg: SceneEntityCfg,
+):
+    """Store initial positions of distractor cubes for movement detection.
+    
+    This should be called during environment reset to track the initial spawn positions
+    of distractor cubes. The positions are stored as environment attributes for later
+    comparison in termination conditions.
+    
+    Args:
+        env: The environment instance.
+        env_ids: Environment indices that are being reset.
+        distractor_1_cfg: Configuration for the first distractor cube.
+        distractor_2_cfg: Configuration for the second distractor cube.
+    """
+    if env_ids is None or len(env_ids) == 0:
+        return
+    
+    # Initialize storage if it doesn't exist
+    if not hasattr(env, '_distractor_initial_pos'):
+        num_envs = env.scene.num_envs
+        device = env.device
+        env._distractor_initial_pos = {
+            'distractor_1': torch.zeros((num_envs, 3), device=device),
+            'distractor_2': torch.zeros((num_envs, 3), device=device),
+        }
+    
+    # Get distractor objects
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+    
+    # Store current positions as initial positions for the reset environments
+    env._distractor_initial_pos['distractor_1'][env_ids] = distractor_1.data.root_pos_w[env_ids, :3].clone()
+    env._distractor_initial_pos['distractor_2'][env_ids] = distractor_2.data.root_pos_w[env_ids, :3].clone()
+
+
+def randomize_all_cubes_with_command_separation(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    asset_cfgs: list[SceneEntityCfg],
+    min_separation: float = 0.15,
+    min_command_separation: float = 0.15,
+    command_name: str = "ee_pose",
+    pose_range: dict[str, tuple[float, float]] = {},
+    max_sample_tries: int = 5000,
+):
+    """Randomize cube positions ensuring separation from each other AND the command position.
+    
+    Args:
+        env: The environment.
+        env_ids: Environment IDs to randomize.
+        asset_cfgs: List of asset configurations to randomize.
+        min_separation: Minimum distance between objects (in meters).
+        min_command_separation: Minimum distance from command target position (in meters).
+        command_name: Name of the command to get target position from.
+        pose_range: Dictionary with position/orientation ranges.
+        max_sample_tries: Maximum sampling attempts per object.
+    """
+    if env_ids is None:
+        return
+    
+    import random
+    import math
+    from isaaclab.utils import math as math_utils
+    
+    # Get command positions in world frame
+    command_term = env.command_manager._terms[command_name]
+    command_pos_w = command_term.pose_command_w[:, :3]  # (num_envs, 3)
+    
+    # Randomize poses in each environment independently
+    for cur_env in env_ids.tolist():
+        # Sample positions ensuring separation from command
+        valid_poses = []
+        
+        for attempt in range(max_sample_tries):
+            # Sample random pose
+            pose = []
+            for key in ["x", "y", "z", "roll", "pitch", "yaw"]:
+                range_val = pose_range.get(key, (0.0, 0.0))
+                pose.append(random.uniform(range_val[0], range_val[1]))
+            
+            # Check distance from command position
+            cmd_pos = command_pos_w[cur_env]
+            pose_pos = torch.tensor(pose[:3], device=env.device)
+            cmd_dist = torch.norm(pose_pos - cmd_pos[:3]).item()
+            
+            if cmd_dist < min_command_separation:
+                continue  # Too close to command, try again
+                
+            # Check distance from other objects
+            is_valid = True
+            for other_pose in valid_poses:
+                dist = math.dist(pose[:3], other_pose[:3])
+                if dist < min_separation:
+                    is_valid = False
+                    break
+                    
+            if is_valid:
+                valid_poses.append(pose)
+                
+            if len(valid_poses) == len(asset_cfgs):
+                break
+        
+        # If we couldn't find valid positions for all, use what we have
+        while len(valid_poses) < len(asset_cfgs):
+            # Add a pose far from everything
+            angle = random.uniform(0, 2 * math.pi)
+            dist = max(min_separation, min_command_separation) * 2
+            x = pose_range["x"][0] + (pose_range["x"][1] - pose_range["x"][0]) / 2
+            y = pose_range["y"][0] + (pose_range["y"][1] - pose_range["y"][0]) / 2
+            pose = [
+                x + dist * math.cos(angle),
+                y + dist * math.sin(angle), 
+                pose_range["z"][0],
+                0, 0, random.uniform(pose_range.get("yaw", (0,0))[0], pose_range.get("yaw", (0,0))[1])
+            ]
+            valid_poses.append(pose)
+        
+        # Apply poses to objects
+        for i, asset_cfg in enumerate(asset_cfgs):
+            asset = env.scene[asset_cfg.name]
+            
+            # Create pose tensor
+            pose_tensor = torch.tensor([valid_poses[i]], device=env.device)
+            positions = pose_tensor[:, 0:3] + env.scene.env_origins[cur_env, 0:3]
+            orientations = math_utils.quat_from_euler_xyz(pose_tensor[:, 3], pose_tensor[:, 4], pose_tensor[:, 5])
+            
+            # Write to simulation
+            asset.write_root_pose_to_sim(
+                torch.cat([positions, orientations], dim=-1), 
+                env_ids=torch.tensor([cur_env], device=env.device)
+            )
+            asset.write_root_velocity_to_sim(
+                torch.zeros(1, 6, device=env.device), 
+                env_ids=torch.tensor([cur_env], device=env.device)
+            )
+

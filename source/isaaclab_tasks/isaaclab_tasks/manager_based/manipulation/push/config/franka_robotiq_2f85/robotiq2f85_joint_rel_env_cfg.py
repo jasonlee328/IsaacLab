@@ -28,7 +28,7 @@ import isaaclab.envs.mdp as isaaclab_mdp
 from isaaclab_tasks.manager_based.manipulation.stack import mdp as stack_mdp
 from isaaclab_tasks.manager_based.manipulation.stack.mdp import franka_stack_events
 from isaaclab_tasks.manager_based.manipulation.push import mdp as push_mdp
-from isaaclab_tasks.manager_based.manipulation.push.mdp import observations as push_observations
+from isaaclab_tasks.manager_based.manipulation.push.mdp import observations as push_observations  
 from isaaclab_tasks.manager_based.manipulation.push.mdp import commands as push_commands
 from isaaclab_tasks.manager_based.manipulation.dexsuite.mdp import commands as dex_cmd
 
@@ -623,3 +623,173 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
             },
             weight=1.0,  # Sparse reward: +1 for success (both position and orientation)
         )
+
+
+
+@configclass
+class FrankaRobotiq2f85CustomOmniPushDistractorEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainCfg):
+    """Configuration for push task with Franka + Robotiq gripper with distractor cubes."""
+    
+    def __post_init__(self):
+        # IMPORTANT: Call parent __post_init__ FIRST to initialize everything
+        super().__post_init__()
+        
+        # Add distractor cubes to the scene
+        self.scene.distractor_1 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Distractor1",
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=[0.5, 0.1, 0.0203],  # Will be randomized
+                rot=[1, 0, 0, 0]
+            ),
+            spawn=UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",  # Red for distractors
+                scale=(1.0, 1.0, 1.0),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            ),
+        )
+        
+        self.scene.distractor_2 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Distractor2",
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=[0.5, -0.1, 0.0203],  # Will be randomized
+                rot=[1, 0, 0, 0]
+            ),
+            spawn=UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",  # Red for distractors
+                scale=(1.0, 1.0, 1.0),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            ),
+        )
+        
+        # Randomize all three cubes together ensuring separation from each other AND command position
+        self.events.randomize_all_cubes = EventTerm(
+            func=push_mdp.randomize_all_cubes_with_command_separation,
+            mode="reset",
+            params={
+                "pose_range": {
+                    "x": (0.55, 0.75),  # Range for all cubes
+                    "y": (-0.25, 0.25),  # Wider y-range
+                    "z": (0.0203, 0.0203),  # Fixed height on table
+                    "roll": (0.0, 0.0),
+                    "pitch": (0.0, 0.0),
+                    "yaw": (-0.5, 0.5)
+                },
+                "min_separation": 0.08,  # Minimum separation between all cubes
+                "min_command_separation": 0.08,  # Minimum separation from command target position
+                "command_name": "ee_pose",  # Command to check distance from
+                "asset_cfgs": [SceneEntityCfg("cube"), SceneEntityCfg("distractor_1"), SceneEntityCfg("distractor_2")],
+            },
+        )
+        
+        # Add event to store initial distractor positions
+        self.events.store_distractor_positions = EventTerm(
+            func=push_mdp.store_distractor_initial_positions,
+            mode="reset",
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+                "distractor_2_cfg": SceneEntityCfg("distractor_2"),
+            },
+        )
+        
+        # Add termination for distractor movement
+        self.terminations.distractor_moved = DoneTerm(
+            func=push_mdp.distractor_moved,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+                "distractor_2_cfg": SceneEntityCfg("distractor_2"),
+                "threshold": 0.005,  # 3cm movement threshold
+            }
+        )
+        
+        # Configure push task specific parameters
+        threshold = 0.02  # Position threshold: 2cm
+        cube_x_range = (0.45, 0.65)  # Random forward distance from robot
+        cube_y_range = (-0.15, 0.15)  # Random lateral position
+        target_x_range = (-0.15, 0.10)  # Target position range (relative to cube)
+        target_y_range = (-0.15, 0.15)  # Target position range (relative to cube)
+        
+        # Update the existing command configuration
+        self.commands.ee_pose.ranges.pos_x = target_x_range
+        self.commands.ee_pose.ranges.pos_y = target_y_range
+        self.commands.ee_pose.success_threshold = threshold
+        self.commands.ee_pose.min_distance = 0.15
+        
+        # Create custom observations that include distractors
+        @configclass
+        class PushDistractorObservationsCfg:
+            """Observations for push task with distractors."""
+            
+            @configclass
+            class PolicyCfg(ObsGroup):
+                """Observations for policy group - includes distractor positions."""
+                
+                # Robot observations
+                joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+                joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+                
+                # End-effector observations
+                ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
+                ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
+                
+                # Target cube observations
+                cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
+                target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
+                
+                # Cube position relative to goal
+                cube_pos_goal = ObsTerm(
+                    func=push_observations.cube_in_target_frame,
+                    params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
+                )
+                
+                # Distractor observations
+                distractor_positions = ObsTerm(
+                    func=push_observations.distractor_positions_rel,
+                    params={
+                        "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+                        "distractor_2_cfg": SceneEntityCfg("distractor_2")
+                    }
+                )
+                
+                # distractor_orientations = ObsTerm(
+                #     func=push_observations.distractor_quats_rel,
+                #     params={
+                #         "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+                #         "distractor_2_cfg": SceneEntityCfg("distractor_2")
+                #     }
+                # )
+                
+                def __post_init__(self):
+                    self.enable_corruption = False
+                    self.concatenate_terms = True
+            
+            # observation groups
+            policy: PolicyCfg = PolicyCfg()
+        
+        # Set the custom observations
+        self.observations = PushDistractorObservationsCfg()
+        
+        # Set rewards
+        self.rewards.reaching_goal = RwdTerm(
+            func=push_mdp.object_reached_goal,
+            params={
+                "object_cfg": SceneEntityCfg("cube"),
+                "goal_cfg": "ee_pose",
+                "threshold": threshold,  # 2cm threshold
+            },
+            weight=1.0,  # Sparse reward: +1 for success
+        )
+        

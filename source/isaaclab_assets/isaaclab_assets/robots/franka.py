@@ -209,7 +209,7 @@ FRANKA_ROBOTIQ_GRIPPER_CFG.actuators = {
 # This uses a pre-assembled USD with proper joint structure based on the community solution.
 
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG = FRANKA_PANDA_CFG.copy()
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.usd_path = "/weka/oe-training-default/jasonl/IsaacLab/Franka/Collected_franka_robotiq/franka_robotiq.usd"
+FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.usd_path = "/home/jason/IsaacLab/Franka/Collected_franka_robotiq/franka_robotiq.usd"
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.variants = None  # Pre-assembled file, no variants needed
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.rigid_props.disable_gravity = True
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.init_state.joint_pos = {
@@ -274,7 +274,7 @@ Gripper Control:
 # Base articulation configuration (no actuators yet - robot agnostic)
 FRANKA_ROBOTIQ_BASE_ARTICULATION = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/weka/oe-training-default/jasonl/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
+        usd_path="/home/jason/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
         activate_contact_sensors=False,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,

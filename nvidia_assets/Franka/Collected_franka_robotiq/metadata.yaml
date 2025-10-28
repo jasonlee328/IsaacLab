@@ -1,0 +1,16 @@
+# Robotiq 2F-85 Gripper Metadata
+# Offset information for frame tracking
+
+gripper_offset:
+  # Offset from panda_link7 (wrist flange) to gripper tip (TCP = 174mm)
+  # NOTE: Use NEGATIVE z-offset because panda_link7's local z-axis points backward (toward robot base)
+  # The TCP is 174mm away from the flange in the direction opposite to the local +z axis
+  # This applies to Franka robots with Robotiq 2F-85 gripper attached
+  pos: [0.0, 0.0, -0.174]
+  quat: [1.0, 0.0, 0.0, 0.0]
+
+offset:
+  # Offset for robot base (identity, no offset)
+  pos: [0.0, 0.0, 0.0]
+  quat: [1.0, 0.0, 0.0, 0.0]
+

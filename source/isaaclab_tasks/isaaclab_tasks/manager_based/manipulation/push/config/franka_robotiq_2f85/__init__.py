@@ -62,3 +62,13 @@ gym.register(
     },
     disable_env_checker=True,
 )
+
+gym.register(
+    id="Blocks-Robotiq2f85-CustomOmni-Push-Distractor",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    kwargs={
+        "env_cfg_entry_point": robotiq2f85_joint_rel_env_cfg.FrankaRobotiq2f85CustomOmniPushDistractorEnvCfg,
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Base_PPORunnerCfg",
+    },
+    disable_env_checker=True,
+)

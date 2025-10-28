@@ -1,9 +1,9 @@
-# Copyright (c) 2022-2025, The Isaac Lab Project Developers.
+# Copyright (c) 2022-2025, The Isaac Lab Project Developers (https://github.com/isaac-sim/IsaacLab/blob/main/CONTRIBUTORS.md).
 # All rights reserved.
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Custom command implementations for push task."""
+"""Sub-module containing relative pose command generators for manipulation tasks."""
 
 from __future__ import annotations
 
@@ -11,144 +11,388 @@ import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
-from isaaclab.managers import CommandTermCfg
-from isaaclab.utils import configclass
-
-# Import the base command from dexsuite
-from isaaclab_tasks.manager_based.manipulation.dexsuite.mdp.commands.pose_commands_cfg import ObjectUniformPoseCommandCfg
-from isaaclab_tasks.manager_based.manipulation.dexsuite.mdp.commands.pose_commands import ObjectUniformPoseCommand
+from isaaclab.assets import Articulation, RigidObject
+from isaaclab.managers import CommandTerm
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+from isaaclab.utils.math import combine_frame_transforms, compute_pose_error, quat_from_euler_xyz, quat_unique
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
-
-@configclass
-class PushObjectUniformPoseCommandCfg(ObjectUniformPoseCommandCfg):
-    """Configuration for push task pose command generator with cube avoidance."""
-    
-    success_threshold: float = 0.12
-    """Success threshold radius (in meters) - cube must be within this distance of target to succeed."""
-    
-    min_gap_from_cube: float = 0.01
-    """Minimum gap (in meters) between cube spawn and success boundary."""
-    
-    cube_half_extent: float = 0.0203
-    """Half-extent of the cube in meters (for blue_block.usd with scale 1.0, side=0.0406m, so half=0.0203m)."""
+    from . import pose_commands_cfg as dex_cmd_cfgs
 
 
-class PushObjectUniformPoseCommand(ObjectUniformPoseCommand):
-    """Uniform pose command generator for push task with proper cube avoidance.
-    
-    This command term samples target object poses while ensuring they don't spawn
-    too close to the cube's ACTUAL position, accounting for the cube's volume and 
-    the success sphere radius to prevent immediate success states or impossible targets.
-    
-    Physics:
-        - Cube is a 0.0406m sided box (half-extent: 0.0203m from center)
-        - Success sphere has radius defined by success_threshold (default 0.12m)
-        - For no overlap: distance >= cube_half_extent + success_threshold + min_gap
-        - Default: 0.0203 + 0.12 + 0.01 = 0.1503m minimum separation
+class PushObjectDistractorAwareCommand(CommandTerm):
+    """Relative pose command generator for an object.
+
+    This command term samples target object poses **relative to the object's current position**:
+      • Drawing (x, y, z) offsets uniformly within configured ranges relative to the cube
+      • Drawing roll-pitch-yaw uniformly within configured ranges, then converting
+        to a quaternion (w, x, y, z). Optionally makes quaternions unique by enforcing
+        a positive real part.
+
+    This is particularly useful for push tasks where you want to ensure the target
+    is always offset from the object's spawn position, preventing trivial successes.
+
+    Frames:
+        Targets are computed relative to the object's current position in the robot's base frame.
+        For metrics/visualization, targets are transformed into the world frame.
+
+    Outputs:
+        The command buffer has shape (num_envs, 7): `(x, y, z, qw, qx, qy, qz)`.
+
+    Metrics:
+        `position_error` and `orientation_error` are computed between the commanded
+        world-frame pose and the object's current world-frame pose.
+
+    Config:
+        `cfg` must provide the relative sampling ranges, whether to enforce quaternion uniqueness,
+        and optional visualization settings.
     """
 
-    cfg: PushObjectUniformPoseCommandCfg
+    cfg: dex_cmd_cfgs.ObjectRelativePoseCommandCfg
     """Configuration for the command generator."""
 
-    def __init__(self, cfg: PushObjectUniformPoseCommandCfg, env: ManagerBasedEnv):
-        # Initialize the base class
+    def __init__(self, cfg: dex_cmd_cfgs.ObjectRelativePoseCommandCfg, env: ManagerBasedEnv):
+        """Initialize the command generator class.
+
+        Args:
+            cfg: The configuration parameters for the command generator.
+            env: The environment object.
+        """
+        # initialize the base class
         super().__init__(cfg, env)
 
-    def _resample_command(self, env_ids: Sequence[int]):
-        """Resample command with proper cube avoidance using actual cube positions.
-        
-        This method:
-        1. Gets the ACTUAL cube position for each environment (not hardcoded)
-        2. Samples target positions uniformly
-        3. Checks if target success spheres would overlap with cube volumes
-        4. Rejects and resamples any targets that are too close
-        
-        Args:
-            env_ids: Environment IDs to resample commands for
+        # extract the robot and object
+        self.robot: Articulation = env.scene[cfg.asset_name]
+        self.object: RigidObject = env.scene[cfg.object_name]
+
+        # create buffers
+        # -- commands: (x, y, z, qw, qx, qy, qz) in robot base frame
+        self.pose_command_b = torch.zeros(self.num_envs, 7, device=self.device)
+        self.pose_command_b[:, 3] = 1.0
+        self.pose_command_w = torch.zeros_like(self.pose_command_b)
+        # -- metrics
+        self.metrics["position_error"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["orientation_error"] = torch.zeros(self.num_envs, device=self.device)
+
+    def __str__(self) -> str:
+        msg = "RelativePoseCommand:\n"
+        msg += f"\tCommand dimension: {tuple(self.command.shape[1:])}\n"
+        msg += f"\tResampling time range: {self.cfg.resampling_time_range}\n"
+        return msg
+
+    """
+    Properties
+    """
+
+    @property
+    def command(self) -> torch.Tensor:
+        """The desired pose command. Shape is (num_envs, 7).
+
+        The first three elements correspond to the position, followed by the quaternion orientation in (w, x, y, z).
         """
-        # Get ACTUAL cube positions (randomized at reset)
-        # Shape: (num_envs, 3) in world frame
-        cube_pos_w = self.object.data.root_pos_w[env_ids]
-        
-        # Transform cube positions to robot base frame (where commands are defined)
-        from isaaclab.utils.math import subtract_frame_transforms
-        cube_pos_b, _ = subtract_frame_transforms(
-            self.robot.data.root_pos_w[env_ids],
-            self.robot.data.root_quat_w[env_ids], 
-            cube_pos_w,
-            torch.zeros((cube_pos_w.shape[0], 4), device=self.device)
-        )
-        
-        # Convert env_ids to tensor for consistent indexing
-        if isinstance(env_ids, torch.Tensor):
-            env_ids_tensor = env_ids
-        elif isinstance(env_ids, slice):
-            # If slice, get all environment indices
-            env_ids_tensor = torch.arange(self.num_envs, device=self.device)
-        else:
-            # If list or other sequence, convert to tensor
-            env_ids_tensor = torch.tensor(list(env_ids), device=self.device)
-        
-        b = len(env_ids_tensor)
-        
-        # Calculate minimum distance: cube_half_extent + success_threshold + gap
-        # This ensures the success sphere doesn't overlap with the cube volume
-        min_distance = self.cfg.cube_half_extent + self.cfg.success_threshold + self.cfg.min_gap_from_cube
-        
-        # Sample random angles (0 to 2π) for each environment
-        angles = torch.rand(b, device=self.device) * 2 * 3.14159
-        
-        # Calculate max possible distance based on workspace bounds
-        # This is distance from origin to corner of workspace
-        max_x = max(abs(self.cfg.ranges.pos_x[0]), abs(self.cfg.ranges.pos_x[1]))
-        max_y = max(abs(self.cfg.ranges.pos_y[0]), abs(self.cfg.ranges.pos_y[1]))
-        max_possible_dist = (max_x**2 + max_y**2)**0.5
-        
-        # Ensure max distance is at least min_distance
-        effective_max_dist = max(max_possible_dist, min_distance)
-        
-        # Sample distances between [min_distance, effective_max_dist]
-        distances = torch.rand(b, device=self.device) * (effective_max_dist - min_distance) + min_distance
-        
-        # Convert polar coordinates to cartesian, relative to cube position
-        target_xy = torch.zeros((b, 2), device=self.device)
-        target_xy[:, 0] = cube_pos_b[:, 0] + distances * torch.cos(angles)
-        target_xy[:, 1] = cube_pos_b[:, 1] + distances * torch.sin(angles)
-        
-        # Clamp to table bounds to ensure target stays in workspace
-        target_xy[:, 0] = torch.clamp(target_xy[:, 0], self.cfg.ranges.pos_x[0], self.cfg.ranges.pos_x[1])
-        target_xy[:, 1] = torch.clamp(target_xy[:, 1], self.cfg.ranges.pos_y[0], self.cfg.ranges.pos_y[1])
-        
-        # Assign to command buffer
-        self.pose_command_b[env_ids_tensor, 0] = target_xy[:, 0]
-        self.pose_command_b[env_ids_tensor, 1] = target_xy[:, 1]
-        self.pose_command_b[env_ids_tensor, 2] = self.cfg.ranges.pos_z[0]  # Fixed Z height
-        
-        # Sample orientation (same as base class)
-        euler_angles = torch.zeros_like(self.pose_command_b[env_ids_tensor, :3])
-        euler_angles[:, 0].uniform_(*self.cfg.ranges.roll)
-        euler_angles[:, 1].uniform_(*self.cfg.ranges.pitch)
-        euler_angles[:, 2].uniform_(*self.cfg.ranges.yaw)
-        
-        from isaaclab.utils.math import quat_from_euler_xyz, quat_unique
-        quat = quat_from_euler_xyz(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
-        self.pose_command_b[env_ids_tensor, 3:] = quat_unique(quat) if self.cfg.make_quat_unique else quat
+        return self.pose_command_b
+
+    """
+    Implementation specific functions.
+    """
 
     def _update_metrics(self):
-        """Override to use parameterized success threshold for visualization."""
-        # Call parent method to update pose_command_w and basic metrics
-        super()._update_metrics()
+        # transform command from base frame to simulation world frame
+        self.pose_command_w[:, :3], self.pose_command_w[:, 3:] = combine_frame_transforms(
+            self.robot.data.root_pos_w,
+            self.robot.data.root_quat_w,
+            self.pose_command_b[:, :3],
+            self.pose_command_b[:, 3:],
+        )
+        # compute the error
+        pos_error, rot_error = compute_pose_error(
+            self.pose_command_w[:, :3],
+            self.pose_command_w[:, 3:],
+            self.object.data.root_state_w[:, :3],
+            self.object.data.root_state_w[:, 3:7],
+        )
+        self.metrics["position_error"] = torch.norm(pos_error, dim=-1)
+        self.metrics["orientation_error"] = torch.norm(rot_error, dim=-1)
+
+    def _resample_command(self, env_ids: Sequence[int]):
+        # Get current object position in world frame
+        object_pos_w = self.object.data.root_pos_w[env_ids]
+        object_quat_w = self.object.data.root_quat_w[env_ids]
+
+        # Transform object position from world to robot base frame
+        robot_pos_w = self.robot.data.root_pos_w[env_ids]
+        robot_quat_w = self.robot.data.root_quat_w[env_ids]
+
+        # Compute object position in robot base frame
+        object_pos_b, object_quat_b = self._transform_world_to_base(
+            object_pos_w, object_quat_w, robot_pos_w, robot_quat_w
+        )
+
+        # Sample relative offsets with minimum distance constraint
+        num_envs = len(env_ids)
+        max_attempts = 100  # Maximum attempts to find valid positions
         
-        # Update success visualization with our parameterized threshold
-        if self.cfg.position_only:
-            distance = torch.norm(self.pose_command_w[:, :3] - self.object.data.root_pos_w[:, :3], dim=1)
-            success_id = (distance < self.cfg.success_threshold).int()
-            # Update goal position visualization with correct threshold
-            if hasattr(self, 'goal_visualizer'):
-                self.goal_visualizer.visualize(self.pose_command_w[:, :3], marker_indices=success_id + 1)
-            # Update current object position visualization
-            if hasattr(self, 'curr_visualizer'):
-                self.curr_visualizer.visualize(self.object.data.root_pos_w, marker_indices=success_id + 1)
+        # Initialize offsets
+        offset_x = torch.empty(num_envs, device=self.device)
+        offset_y = torch.empty(num_envs, device=self.device)
+        offset_z = torch.empty(num_envs, device=self.device)
+        
+        # Keep track of which environments still need valid samples
+        valid_mask = torch.zeros(num_envs, dtype=torch.bool, device=self.device)
+        
+        for attempt in range(max_attempts):
+            # Sample offsets for environments that don't have valid positions yet
+            invalid_indices = ~valid_mask
+            if not invalid_indices.any():
+                break  # All environments have valid positions
+            
+            num_invalid = invalid_indices.sum().item()
+            r = torch.empty(num_invalid, device=self.device)
+            
+            offset_x[invalid_indices] = r.uniform_(*self.cfg.ranges.pos_x)
+            offset_y[invalid_indices] = r.uniform_(*self.cfg.ranges.pos_y)
+            offset_z[invalid_indices] = r.uniform_(*self.cfg.ranges.pos_z)
+            
+            # Check if sampled offsets satisfy minimum distance constraint
+            if self.cfg.min_distance > 0.0:
+                # Calculate distance from object to target
+                distance = torch.sqrt(
+                    offset_x[invalid_indices] ** 2 + 
+                    offset_y[invalid_indices] ** 2 + 
+                    offset_z[invalid_indices] ** 2
+                )
+                # Mark as valid if distance meets minimum threshold
+                newly_valid = distance >= self.cfg.min_distance
+                valid_mask[invalid_indices] = newly_valid
+            else:
+                # No minimum distance constraint, all samples are valid
+                valid_mask[invalid_indices] = True
+        
+        # If some environments still don't have valid positions after max attempts,
+        # enforce minimum distance by scaling the offsets
+        if not valid_mask.all():
+            invalid_indices = ~valid_mask
+            offset_magnitude = torch.sqrt(
+                offset_x[invalid_indices] ** 2 + 
+                offset_y[invalid_indices] ** 2 + 
+                offset_z[invalid_indices] ** 2
+            )
+            # Avoid division by zero
+            offset_magnitude = torch.clamp(offset_magnitude, min=1e-6)
+            scale = self.cfg.min_distance / offset_magnitude
+            offset_x[invalid_indices] *= scale
+            offset_y[invalid_indices] *= scale
+            offset_z[invalid_indices] *= scale
+
+        # Add offsets to current object position (in base frame)
+        self.pose_command_b[env_ids, 0] = object_pos_b[:, 0] + offset_x
+        self.pose_command_b[env_ids, 1] = object_pos_b[:, 1] + offset_y
+        self.pose_command_b[env_ids, 2] = object_pos_b[:, 2] + offset_z
+
+        # Handle orientation
+        if not self.cfg.position_only:
+            euler_angles = torch.zeros_like(self.pose_command_b[env_ids, :3])
+            euler_angles[:, 0].uniform_(*self.cfg.ranges.roll)
+            euler_angles[:, 1].uniform_(*self.cfg.ranges.pitch)
+            euler_angles[:, 2].uniform_(*self.cfg.ranges.yaw)
+            quat = quat_from_euler_xyz(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
+            # make sure the quaternion has real part as positive
+            self.pose_command_b[env_ids, 3:] = quat_unique(quat) if self.cfg.make_quat_unique else quat
+        else:
+            # Keep current orientation if position_only
+            self.pose_command_b[env_ids, 3:] = object_quat_b
+
+    def _transform_world_to_base(
+        self,
+        pos_w: torch.Tensor,
+        quat_w: torch.Tensor,
+        robot_pos_w: torch.Tensor,
+        robot_quat_w: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Transform position and quaternion from world frame to robot base frame.
+
+        Args:
+            pos_w: Position in world frame (N, 3)
+            quat_w: Quaternion in world frame (N, 4) in (w, x, y, z) format
+            robot_pos_w: Robot base position in world frame (N, 3)
+            robot_quat_w: Robot base quaternion in world frame (N, 4) in (w, x, y, z) format
+
+        Returns:
+            Tuple of (position in base frame, quaternion in base frame)
+        """
+        # Compute rotation matrix from robot quaternion
+        R_w_b = self._quat_to_rot_matrix(robot_quat_w)
+
+        # Transform position: pos_b = R^T * (pos_w - robot_pos_w)
+        pos_b = torch.bmm(R_w_b.transpose(-2, -1), (pos_w - robot_pos_w).unsqueeze(-1)).squeeze(-1)
+
+        # Transform quaternion: quat_b = quat_robot_inv * quat_w
+        quat_robot_inv = self._quat_inverse(robot_quat_w)
+        quat_b = self._quat_multiply(quat_robot_inv, quat_w)
+
+        return pos_b, quat_b
+
+    def _quat_to_rot_matrix(self, quat: torch.Tensor) -> torch.Tensor:
+        """Convert quaternion (w, x, y, z) to rotation matrix.
+
+        Args:
+            quat: Quaternions of shape (N, 4) in (w, x, y, z) format
+
+        Returns:
+            Rotation matrices of shape (N, 3, 3)
+        """
+        w, x, y, z = quat[..., 0], quat[..., 1], quat[..., 2], quat[..., 3]
+
+        # Compute rotation matrix elements
+        xx, yy, zz = x * x, y * y, z * z
+        xy, xz, yz = x * y, x * z, y * z
+        wx, wy, wz = w * x, w * y, w * z
+
+        # Build rotation matrix
+        R = torch.zeros(quat.shape[0], 3, 3, device=quat.device, dtype=quat.dtype)
+        R[..., 0, 0] = 1 - 2 * (yy + zz)
+        R[..., 0, 1] = 2 * (xy - wz)
+        R[..., 0, 2] = 2 * (xz + wy)
+        R[..., 1, 0] = 2 * (xy + wz)
+        R[..., 1, 1] = 1 - 2 * (xx + zz)
+        R[..., 1, 2] = 2 * (yz - wx)
+        R[..., 2, 0] = 2 * (xz - wy)
+        R[..., 2, 1] = 2 * (yz + wx)
+        R[..., 2, 2] = 1 - 2 * (xx + yy)
+
+        return R
+
+    def _quat_inverse(self, quat: torch.Tensor) -> torch.Tensor:
+        """Compute quaternion inverse (conjugate for unit quaternions).
+
+        Args:
+            quat: Quaternions of shape (N, 4) in (w, x, y, z) format
+
+        Returns:
+            Inverse quaternions of shape (N, 4)
+        """
+        # For unit quaternions, inverse is just negating the vector part
+        inv_quat = quat.clone()
+        inv_quat[..., 1:] = -quat[..., 1:]
+        return inv_quat
+
+    def _quat_multiply(self, q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
+        """Multiply two quaternions.
+
+        Args:
+            q1: First quaternions of shape (N, 4) in (w, x, y, z) format
+            q2: Second quaternions of shape (N, 4) in (w, x, y, z) format
+
+        Returns:
+            Product quaternions of shape (N, 4)
+        """
+        w1, x1, y1, z1 = q1[..., 0], q1[..., 1], q1[..., 2], q1[..., 3]
+        w2, x2, y2, z2 = q2[..., 0], q2[..., 1], q2[..., 2], q2[..., 3]
+
+        w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+        x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+        y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+        z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+
+        return torch.stack([w, x, y, z], dim=-1)
+
+    def _update_command(self):
+        pass
+
+    # def _set_debug_vis_impl(self, debug_vis: bool):
+    #     # create markers if necessary for the first time
+    #     if debug_vis:
+    #         if not hasattr(self, "goal_visualizer"):
+    #             # -- goal pose
+    #             self.goal_visualizer = VisualizationMarkers(self.cfg.goal_pose_visualizer_cfg)
+    #             # -- current body pose
+    #             self.curr_visualizer = VisualizationMarkers(self.cfg.curr_pose_visualizer_cfg)
+    #         # set their visibility to true
+    #         self.goal_visualizer.set_visibility(True)
+    #         self.curr_visualizer.set_visibility(True)
+    #     else:
+    #         if hasattr(self, "goal_visualizer"):
+    #             self.goal_visualizer.set_visibility(False)
+    #             self.curr_visualizer.set_visibility(False)
+
+    # def _debug_vis_callback(self, event):
+    #     # check if robot is initialized
+    #     # note: this is needed in-case the robot is de-initialized. we can't access the data
+    #     if not self.robot.is_initialized:
+    #         return
+    #     # update the markers
+    #     if not self.cfg.position_only:
+    #         # -- goal pose
+    #         self.goal_visualizer.visualize(self.pose_command_w[:, :3], self.pose_command_w[:, 3:])
+    #         # -- current object pose
+    #         self.curr_visualizer.visualize(self.object.data.root_pos_w, self.object.data.root_quat_w)
+    #     else:
+    #         distance = torch.norm(self.pose_command_w[:, :3] - self.object.data.root_pos_w[:, :3], dim=1)
+    #         success_id = (distance < 0.05).int()
+    #         # note: since marker indices for position is 1(far) and 2(near), we can simply shift the success_id by 1.
+    #         # -- goal position
+    #         self.goal_visualizer.visualize(self.pose_command_w[:, :3], marker_indices=success_id + 1)
+    #         # -- current object position
+    #         self.curr_visualizer.visualize(self.object.data.root_pos_w, marker_indices=success_id + 1)
+
+
+    def _set_debug_vis_impl(self, debug_vis: bool):
+        """Enable or disable debug visualization."""
+        if debug_vis:
+            # Create markers if necessary for the first time
+            if not hasattr(self, "goal_pose_visualizer"):
+                # Create goal pose visualizer with proper prim path
+                from isaaclab.markers.config import GREEN_ARROW_X_MARKER_CFG
+                
+                goal_cfg = VisualizationMarkersCfg(
+                    prim_path="/Visuals/Command/goal_pose_relative",
+                    markers=GREEN_ARROW_X_MARKER_CFG.markers
+                )
+                # Scale down the goal pose markers
+                goal_cfg.markers["arrow"].scale = (0.05, 0.05, 0.15)
+                self.goal_pose_visualizer = VisualizationMarkers(goal_cfg)
+            if not hasattr(self, "object_pose_visualizer"):
+                # Create current object pose visualizer with proper prim path
+                from isaaclab.markers.config import BLUE_ARROW_X_MARKER_CFG
+                
+                object_cfg = VisualizationMarkersCfg(
+                    prim_path="/Visuals/Command/object_pose_relative",
+                    markers=BLUE_ARROW_X_MARKER_CFG.markers
+                )
+                # Scale down the object pose markers
+                object_cfg.markers["arrow"].scale = (0.05, 0.05, 0.15)
+                self.object_pose_visualizer = VisualizationMarkers(object_cfg)
+            # Set their visibility to true
+            self.goal_pose_visualizer.set_visibility(True)
+            self.object_pose_visualizer.set_visibility(True)
+        else:
+            # Set visibility to false
+            if hasattr(self, "goal_pose_visualizer"):
+                self.goal_pose_visualizer.set_visibility(False)
+            if hasattr(self, "object_pose_visualizer"):
+                self.object_pose_visualizer.set_visibility(False)
+
+    def _debug_vis_callback(self, event):
+        """Update visualization when debug is enabled."""
+        # check if robot is initialized
+        # note: this is needed in-case the robot is de-initialized. we can't access the data
+        if not self.robot.is_initialized:
+            return
+        
+        # Update markers if they exist
+        if hasattr(self, "goal_pose_visualizer") and hasattr(self, "object_pose_visualizer"):
+            # Visualize goal pose (green arrows)
+            self.goal_pose_visualizer.visualize(
+                translations=self.pose_command_w[:, :3],
+                orientations=self.pose_command_w[:, 3:],
+            )
+            
+            # Visualize current object pose (blue arrows)
+            self.object_pose_visualizer.visualize(
+                translations=self.object.data.root_pos_w,
+                orientations=self.object.data.root_quat_w,
+            )
+
+

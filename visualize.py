@@ -62,7 +62,8 @@ def main():
     
     # simulate environment
     step_count = 0
-    reset_interval = 200  # Reset every 200 steps to see randomization
+    reset_interval = 20
+    # Reset every 200 steps to see randomization
     
     while simulation_app.is_running():
         # run everything in inference mode

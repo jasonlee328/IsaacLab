@@ -367,6 +367,54 @@ def cube_velocity_w(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnt
     return torch.cat([cube.data.root_lin_vel_w, cube.data.root_ang_vel_w], dim=-1)
 
 
+def distractor_positions_rel(env: ManagerBasedRLEnv, 
+                            distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1"),
+                            distractor_2_cfg: SceneEntityCfg = SceneEntityCfg("distractor_2")) -> torch.Tensor:
+    """Distractor cube positions relative to robot base.
+    
+    Returns concatenated positions of both distractor cubes in robot base frame.
+    Shape: (num_envs, 6) - [dist1_x, dist1_y, dist1_z, dist2_x, dist2_y, dist2_z]
+    """
+    from isaaclab.assets import RigidObject
+    
+    # Extract distractors
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+    
+    # Get positions in world frame
+    dist1_pos_w = distractor_1.data.root_pos_w[:, :3]
+    dist2_pos_w = distractor_2.data.root_pos_w[:, :3]
+    
+    # Convert to environment-relative coordinates
+    dist1_pos = dist1_pos_w - env.scene.env_origins
+    dist2_pos = dist2_pos_w - env.scene.env_origins
+    
+    # Concatenate positions
+    return torch.cat([dist1_pos, dist2_pos], dim=-1)
+
+
+def distractor_quats_rel(env: ManagerBasedRLEnv,
+                        distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1"),
+                        distractor_2_cfg: SceneEntityCfg = SceneEntityCfg("distractor_2")) -> torch.Tensor:
+    """Distractor cube orientations as quaternions.
+    
+    Returns concatenated quaternions of both distractor cubes.
+    Shape: (num_envs, 8) - [dist1_qw, dist1_qx, dist1_qy, dist1_qz, dist2_qw, dist2_qx, dist2_qy, dist2_qz]
+    """
+    from isaaclab.assets import RigidObject
+    
+    # Extract distractors
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+    
+    # Get orientations
+    dist1_quat_w = distractor_1.data.root_quat_w
+    dist2_quat_w = distractor_2.data.root_quat_w
+    
+    # Concatenate quaternions
+    return torch.cat([dist1_quat_w, dist2_quat_w], dim=-1)
+
+
 
 ##
 # Reorientation-specific observations
