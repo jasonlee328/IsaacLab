@@ -13,5 +13,7 @@ commands to be sent to the robot.
 
 from .differential_ik import DifferentialIKController
 from .differential_ik_cfg import DifferentialIKControllerCfg
+from .differential_ik_multi import MultiConstraintDifferentialIKController
+from .differential_ik_multi_cfg import MultiConstraintDifferentialIKControllerCfg
 from .operational_space import OperationalSpaceController
 from .operational_space_cfg import OperationalSpaceControllerCfg

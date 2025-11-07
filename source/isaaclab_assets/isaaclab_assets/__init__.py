@@ -11,6 +11,9 @@ import toml
 ISAACLAB_ASSETS_EXT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
 """Path to the extension source directory."""
 
+#temp path for octilab assets
+OCTILAB_CLOUD_ASSETS_DIR = "https://octilab-assets.s3.us-west-004.backblazeb2.com"
+
 ISAACLAB_ASSETS_DATA_DIR = os.path.join(ISAACLAB_ASSETS_EXT_DIR, "data")
 """Path to the extension data directory."""
 

@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../../../../../../research/OctiLab"
+		},
+		{
+			"path": "../../../../../../../.."
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.tpp": "cpp",
+			"*.kit": "toml",
+			"*.rst": "restructuredtext"
+		},
+		"python.languageServer": "None"
+	}
+}

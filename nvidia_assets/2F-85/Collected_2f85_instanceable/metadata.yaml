@@ -1,0 +1,38 @@
+# Metadata for standalone Robotiq 2F-85 gripper (used for grasp sampling)
+# This metadata ensures compatibility with Franka grasps by using the same conventions
+
+# Gripper body name for pose tracking (used by recorders)
+# Note: Isaac Sim's standalone gripper uses robotiq_arg2f_base_link, same as Franka pre-assembled
+gripper_body_name: robotiq_arg2f_base_link
+
+# Gripper offset from robotiq_base_link to TCP
+gripper_offset:
+  pos: [0.0, 0.0, 0.0]  # TCP is at the base link origin for standalone gripper
+  quat: [1.0, 0.0, 0.0, 0.0]
+
+# Robot base offset (identity for gripper-only)
+offset:
+  pos: [0.0, 0.0, 0.0]
+  quat: [1.0, 0.0, 0.0, 0.0]
+
+# Gripper approach direction (physical frame) - Z-up for standalone gripper (points toward grasp)
+gripper_approach_direction: [0, 0, 1]
+
+# Grasp alignment axis (physical frame)
+grasp_align_axis: [0, 0, 1]
+
+# Orientation sampling axis (for grasp generation)
+orientation_sample_axis: [0, 0, 1]
+
+# Finger parameters for grasp sampling
+finger_offset: 0.0  # TCP at base link for standalone gripper
+finger_clearance: 0.06  # Clearance needed for fingers
+maximum_aperture: 0.085  # Maximum gripper opening (Robotiq 2F-85 spec)
+finger_open_joint_angle: 0.0  # Gripper fully open joint angle
+
+# Grasp recorder joint filters (match gripper joints we care about for datasets)
+grasp_recorder_joint_name_exprs:
+  - ".*_outer_knuckle_joint"
+  - ".*_inner_finger_joint"
+  - "RevoluteJoint.*"
+

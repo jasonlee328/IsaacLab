@@ -1,0 +1,738 @@
+# Copyright (c) 2024-2025, The Octi Lab Project Developers. (https://github.com/zoctipus/OctiLab/blob/main/CONTRIBUTORS.md).
+# Proprietary and Confidential - All Rights Reserved.
+#
+# Unauthorized copying of this file, via any medium is strictly prohibited
+
+from __future__ import annotations
+
+from dataclasses import MISSING
+
+import isaaclab.sim as sim_utils
+from isaaclab.assets import AssetBaseCfg, RigidObjectCfg
+from isaaclab.envs import ManagerBasedRLEnvCfg, ViewerCfg
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+
+from isaaclab.utils import get_octilab_assets_path, get_octilab_reset_state_datasets_path
+
+from isaaclab_assets import OCTILAB_CLOUD_ASSETS_DIR
+from isaaclab_assets.robots.franka import FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG
+
+from isaaclab_tasks.manager_based.manipulation.reset_states.config.franka_robotiq_2f85.actions import (
+    FrankaRobotiq2f85RelativeJointPositionAction,
+    FrankaRobotiq2f85RelativeOSCAction,
+)
+
+from ... import mdp as task_mdp
+
+
+@configclass
+class RlStateSceneCfg(InteractiveSceneCfg):
+    """Scene configuration for RL state environment."""
+
+    robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+    insertive_object: RigidObjectCfg = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/InsertiveObject",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Custom/Peg/peg.usd",
+            scale=(1, 1, 1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                solver_position_iteration_count=4,
+                solver_velocity_iteration_count=0,
+                disable_gravity=False,
+                kinematic_enabled=False,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.02),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    receptive_object: RigidObjectCfg = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/ReceptiveObject",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Custom/PegHole/peg_hole.usd",
+            scale=(1, 1, 1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                solver_position_iteration_count=4,
+                solver_velocity_iteration_count=0,
+                disable_gravity=False,
+                # receptive object does not move
+                kinematic_enabled=False,
+            ),
+            # since kinematic_enabled=True, mass does not matter
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+    # Environment
+    table = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Table",
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.4, 0.0, -0.881), rot=(0.707, 0.0, 0.0, -0.707)),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Mounts/UWPatVention/pat_vention.usd",
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+        ),
+    )
+
+    table = AssetBaseCfg(
+        prim_path="{ENV_REGEX_NS}/Table",
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.5, 0.0, 0.0), rot=(0.707, 0.0, 0.0, 0.707)),
+        spawn=sim_utils.UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
+    )
+
+    ground = AssetBaseCfg(
+        prim_path="/World/GroundPlane",
+        init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
+        spawn=sim_utils.GroundPlaneCfg(),
+    )
+
+    # Use simple dome light to match push config
+    light = AssetBaseCfg(
+        prim_path="/World/light",
+        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
+    )
+
+
+
+@configclass
+class BaseEventCfg:
+    """Configuration for events."""
+
+    # mode: startup (randomize dynamics)
+    robot_material = EventTerm(
+        func=task_mdp.randomize_rigid_body_material,  # type: ignore
+        mode="startup",
+        params={
+            "static_friction_range": (0.3, 1.2),
+            "dynamic_friction_range": (0.2, 1.0),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 1,
+            "asset_cfg": SceneEntityCfg("robot"),
+            "make_consistent": True,
+        },
+    )
+
+    # use large friction to avoid slipping
+    insertive_object_material = EventTerm(
+        func=task_mdp.randomize_rigid_body_material,  # type: ignore
+        mode="startup",
+        params={
+            "static_friction_range": (1.0, 2.0),
+            "dynamic_friction_range": (0.9, 1.9),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 1,
+            "asset_cfg": SceneEntityCfg("insertive_object"),
+            "make_consistent": True,
+        },
+    )
+
+    # use large friction to avoid slipping
+    receptive_object_material = EventTerm(
+        func=task_mdp.randomize_rigid_body_material,  # type: ignore
+        mode="startup",
+        params={
+            "static_friction_range": (1.0, 2.0),
+            "dynamic_friction_range": (0.9, 1.9),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 1,
+            "asset_cfg": SceneEntityCfg("receptive_object"),
+            "make_consistent": True,
+        },
+    )
+
+    # table_material = EventTerm(
+    #     func=task_mdp.randomize_rigid_body_material,  # type: ignore
+    #     mode="startup",
+    #     params={
+    #         "static_friction_range": (0.3, 0.6),
+    #         "dynamic_friction_range": (0.2, 0.5),
+    #         "restitution_range": (0.0, 0.0),
+    #         "num_buckets": 1,
+    #         "asset_cfg": SceneEntityCfg("table"),
+    #         "make_consistent": True,
+    #     },
+    # )
+
+    randomize_robot_mass = EventTerm(
+        func=task_mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "mass_distribution_params": (1.3, 1.3),
+            "operation": "scale",
+            "distribution": "uniform",
+            "recompute_inertia": True,
+        },
+    )
+
+    randomize_insertive_object_mass = EventTerm(
+        func=task_mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("insertive_object"),
+            # we assume insertive object is somewhere between 20g and 200g
+            "mass_distribution_params": (0.2, 0.2),
+            "operation": "abs",
+            "distribution": "uniform",
+            "recompute_inertia": True,
+        },
+    )
+
+    randomize_receptive_object_mass = EventTerm(
+        func=task_mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("receptive_object"),
+            "mass_distribution_params": (1.5, 1.5),
+            "operation": "scale",
+            "distribution": "uniform",
+            "recompute_inertia": True,
+        },
+    )
+
+    # randomize_table_mass = EventTerm(
+    #     func=task_mdp.randomize_rigid_body_mass,
+    #     mode="startup",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("table"),
+    #         "mass_distribution_params": (1.5, 1.5),
+    #         "operation": "scale",
+    #         "distribution": "uniform",
+    #         "recompute_inertia": True,
+    #     },
+    # )
+
+    # randomize_robot_joint_parameters = EventTerm(
+    #     func=task_mdp.randomize_joint_parameters,
+    #     mode="reset",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg(
+    #             "robot",
+    #             joint_names=["panda_joint.*", ".*_outer_knuckle_joint", ".*_inner_finger_joint"],
+    #         ),
+    #         "friction_distribution_params": (4.0, 4.0),
+    #         "armature_distribution_params": (4.0, 4.0),
+    #         "operation": "scale",
+    #         "distribution": "log_uniform",
+    #     },
+    # )
+
+    # randomize_gripper_actuator_parameters = EventTerm(
+    #     func=task_mdp.randomize_actuator_gains,
+    #     mode="reset",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg(
+    #             "robot",
+    #             joint_names=[".*_outer_knuckle_joint", ".*_inner_finger_joint"],
+    #         ),
+    #         "stiffness_distribution_params": (2.0, 2.0),
+    #         "damping_distribution_params": (2.0, 2.0),
+    #         "operation": "scale",
+    #         "distribution": "log_uniform",
+    #     },
+    # )
+
+    # mode: reset
+    reset_everything = EventTerm(func=task_mdp.reset_scene_to_default, mode="reset", params={})
+
+
+@configclass
+class TrainEventCfg(BaseEventCfg):
+    """Configuration for training events."""
+
+    reset_from_reset_states = EventTerm(
+        func=task_mdp.MultiResetManager,
+        mode="reset",
+        params={
+            "base_paths": [
+                str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAnywhere"),
+                # str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAround"),
+                str(get_octilab_reset_state_datasets_path() / "ObjectRestingEEGrasped"),
+                str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEGrasped"),
+                str(get_octilab_reset_state_datasets_path() / "ObjectNearReceptiveEEGrasped"),
+                # f"{OCTILAB_CLOUD_ASSETS_DIR}/Datasets/Resets/Assemblies/ObjectPartiallyAssembledEEGrasped",
+            ],
+            "probs": [0.25, 0.25, 0.25, 0.25],
+            "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+        },
+    )
+
+
+@configclass
+class EvalEventCfg(BaseEventCfg):
+    """Configuration for evaluation events."""
+
+    reset_from_reset_states = EventTerm(
+        func=task_mdp.MultiResetManager,
+        mode="reset",
+        params={
+            "base_paths": [
+                str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAnywhere"),
+            ],
+            "probs": [1.0],
+            "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+        },
+    )
+
+
+@configclass
+class CommandsCfg:
+    """Command specifications for the MDP."""
+
+    # task_command = task_mdp.RandomTableGoalCommandCfg(
+    #     asset_cfg=SceneEntityCfg("robot", body_names="body"),
+    #     resampling_time_range=(1e6, 1e6),
+    #     success_position_threshold=0.01,
+    #     success_orientation_threshold=0.05,
+    #     insertive_asset_cfg=SceneEntityCfg("insertive_object"),
+    #     table_asset_cfg=SceneEntityCfg("ur5_metal_support"),
+    #     goal_pose_range={
+    #         "x": (0.3, 0.55),
+    #         "y": (-0.1, 0.3),
+    #         "z": (0.03, 0.03),
+    #         "roll": (0, 0),
+    #         "pitch": (0, 0),
+    #         "yaw": (0, 0),
+    #     },
+    #     debug_vis=True,  # Enable visualization of goal poses
+    # )
+
+# In your RL configuration
+    task_command = task_mdp.ReceptiveObjectGoalCommandCfg(
+        asset_cfg=SceneEntityCfg("robot", body_names="body"),
+        resampling_time_range=(1e6, 1e6),
+        success_position_threshold=0.01,
+        success_orientation_threshold=0.1,
+        insertive_asset_cfg=SceneEntityCfg("insertive_object"),
+        receptive_asset_cfg=SceneEntityCfg("receptive_object"),
+        goal_height_offset=0.04,  # 10cm above receptive object
+        debug_vis=True,
+    )
+
+
+@configclass
+class ObservationsCfg:
+    """Observation specifications for the MDP."""
+
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for policy group."""
+
+        prev_actions = ObsTerm(func=task_mdp.last_action)
+
+        joint_pos = ObsTerm(func=task_mdp.joint_pos)
+
+        end_effector_pose = ObsTerm(
+            func=task_mdp.target_asset_pose_in_root_asset_frame_with_metadata,
+            params={
+                "target_asset_cfg": SceneEntityCfg("robot", body_names="robotiq_arg2f_base_link"),
+                "root_asset_cfg": SceneEntityCfg("robot"),
+                "target_asset_offset_metadata_key": "gripper_offset",
+                "root_asset_offset_metadata_key": "offset",
+                "use_axis_angle": True,
+            },
+        )
+
+        insertive_asset_pose = ObsTerm(
+            func=task_mdp.target_asset_pose_in_root_asset_frame_with_metadata,
+            params={
+                "target_asset_cfg": SceneEntityCfg("insertive_object"),
+                "root_asset_cfg": SceneEntityCfg("robot", body_names="robotiq_arg2f_base_link"),
+                "root_asset_offset_metadata_key": "gripper_offset",
+                "use_axis_angle": True,
+            },
+        )
+
+        goal_pose_commands = ObsTerm(
+            func=task_mdp.goal_pose_commands,
+            params={"command_name": "task_command"},
+        )
+
+        goal_pose_in_end_effector_frame = ObsTerm(
+            func=task_mdp.goal_pose_in_end_effector_frame,
+            params={"command_name": "task_command"},
+        )
+
+        insertive_object_in_goal_frame = ObsTerm(
+            func=task_mdp.insertive_object_in_goal_frame,
+            params={"command_name": "task_command"},
+        )
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+            self.history_length = 5
+
+    @configclass
+    class CriticCfg(ObsGroup):
+        """Critic observations for policy group."""
+
+        prev_actions = ObsTerm(func=task_mdp.last_action)
+
+        joint_pos = ObsTerm(func=task_mdp.joint_pos)
+
+        end_effector_pose = ObsTerm(
+            func=task_mdp.target_asset_pose_in_root_asset_frame_with_metadata,
+            params={
+                "target_asset_cfg": SceneEntityCfg("robot", body_names="robotiq_arg2f_base_link"),
+                "root_asset_cfg": SceneEntityCfg("robot"),
+                "target_asset_offset_metadata_key": "gripper_offset",
+                "root_asset_offset_metadata_key": "offset",
+                "use_axis_angle": True,
+            },
+        )
+
+        insertive_asset_pose = ObsTerm(
+            func=task_mdp.target_asset_pose_in_root_asset_frame_with_metadata,
+            params={
+                "target_asset_cfg": SceneEntityCfg("insertive_object"),
+                "root_asset_cfg": SceneEntityCfg("robot", body_names="robotiq_arg2f_base_link"),
+                "root_asset_offset_metadata_key": "gripper_offset",
+                "use_axis_angle": True,
+            },
+        )
+
+        goal_pose_commands = ObsTerm(
+            func=task_mdp.goal_pose_commands,
+            params={"command_name": "task_command"},
+        )
+
+        goal_pose_in_end_effector_frame = ObsTerm(
+            func=task_mdp.goal_pose_in_end_effector_frame,
+            params={"command_name": "task_command"},
+        )
+
+        insertive_object_in_goal_frame = ObsTerm(
+            func=task_mdp.insertive_object_in_goal_frame,
+            params={"command_name": "task_command"},
+        )
+
+        # privileged observations
+        time_left = ObsTerm(func=task_mdp.time_left)
+
+        joint_vel = ObsTerm(func=task_mdp.joint_vel)
+
+        end_effector_vel_lin_ang_b = ObsTerm(
+            func=task_mdp.asset_link_velocity_in_root_asset_frame,
+            params={
+                "target_asset_cfg": SceneEntityCfg("robot", body_names="robotiq_arg2f_base_link"),
+                "root_asset_cfg": SceneEntityCfg("robot"),
+            },
+        )
+
+        # robot_material_properties = ObsTerm(
+        #     func=task_mdp.get_material_properties, params={"asset_cfg": SceneEntityCfg("robot")}
+        # )
+
+        # insertive_object_material_properties = ObsTerm(
+        #     func=task_mdp.get_material_properties, params={"asset_cfg": SceneEntityCfg("insertive_object")}
+        # )
+
+        # receptive_object_material_properties = ObsTerm(
+        #     func=task_mdp.get_material_properties, params={"asset_cfg": SceneEntityCfg("receptive_object")}
+        # )
+
+        # table_material_properties = ObsTerm(
+        #     func=task_mdp.get_material_properties, params={"asset_cfg": SceneEntityCfg("table")}
+        # )
+
+        # robot_mass = ObsTerm(func=task_mdp.get_mass, params={"asset_cfg": SceneEntityCfg("robot")})
+
+        # insertive_object_mass = ObsTerm(
+        #     func=task_mdp.get_mass, params={"asset_cfg": SceneEntityCfg("insertive_object")}
+        # )
+
+        # receptive_object_mass = ObsTerm(
+        #     func=task_mdp.get_mass, params={"asset_cfg": SceneEntityCfg("receptive_object")}
+        # )
+
+        # table_mass = ObsTerm(func=task_mdp.get_mass, params={"asset_cfg": SceneEntityCfg("table")})
+
+        # robot_joint_friction = ObsTerm(func=task_mdp.get_joint_friction, params={"asset_cfg": SceneEntityCfg("robot")})
+
+        # robot_joint_armature = ObsTerm(func=task_mdp.get_joint_armature, params={"asset_cfg": SceneEntityCfg("robot")})
+
+        # robot_joint_stiffness = ObsTerm(
+        #     func=task_mdp.get_joint_stiffness, params={"asset_cfg": SceneEntityCfg("robot")}
+        # )
+
+        # robot_joint_damping = ObsTerm(func=task_mdp.get_joint_damping, params={"asset_cfg": SceneEntityCfg("robot")})
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+            self.history_length = 1
+
+    # observation groups
+    policy: PolicyCfg = PolicyCfg()
+    critic: CriticCfg = CriticCfg()
+
+
+@configclass
+class RewardsCfg:
+
+    # safety rewards
+
+    action_magnitude = RewTerm(func=task_mdp.action_l2_clamped, weight=-1e-4)
+
+    action_rate = RewTerm(func=task_mdp.action_rate_l2_clamped, weight=-1e-4)
+
+    joint_vel = RewTerm(
+        func=task_mdp.joint_vel_l2_clamped,
+        weight=-1e-3,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*"])},
+    )
+
+    abnormal_robot = RewTerm(func=task_mdp.abnormal_robot_state, weight=-100.0)
+
+    # task rewards
+
+    progress_context = RewTerm(
+        func=task_mdp.GoalProgressContext,  # type: ignore
+        weight=0.1,
+        params={
+            "insertive_asset_cfg": SceneEntityCfg("insertive_object"),
+        },
+    )
+
+    ee_asset_distance = RewTerm(
+        func=task_mdp.ee_asset_distance_tanh,
+        weight=0.1,
+        params={
+            "root_asset_cfg": SceneEntityCfg("robot", body_names="robotiq_arg2f_base_link"),
+            "target_asset_cfg": SceneEntityCfg("insertive_object"),
+            "root_asset_offset_metadata_key": "gripper_offset",
+            "std": 1.0,
+        },
+    )
+
+    dense_success_reward = RewTerm(func=task_mdp.dense_success_reward, weight=0.1, params={"std": 1.0})
+
+    success_reward = RewTerm(func=task_mdp.success_reward, weight=1.0)
+
+
+@configclass
+class TerminationsCfg:
+    """Termination terms for the MDP."""
+
+    time_out = DoneTerm(func=task_mdp.time_out, time_out=True)
+
+    abnormal_robot = DoneTerm(func=task_mdp.abnormal_robot_state)
+
+
+    #TODO: add termination for objects  falling off the table
+
+
+def make_insertive_object(usd_path: str):
+    return RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/InsertiveObject",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=usd_path,
+            scale=(1, 1, 1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                solver_position_iteration_count=4,
+                solver_velocity_iteration_count=0,
+                disable_gravity=False,
+                kinematic_enabled=False,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.001),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+
+def make_receptive_object(usd_path: str):
+    return RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/ReceptiveObject",
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=usd_path,
+            scale=(1, 1, 1),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                solver_position_iteration_count=4,
+                solver_velocity_iteration_count=0,
+                disable_gravity=False,
+                kinematic_enabled=False,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+        ),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
+    )
+
+
+# variants = {
+#     "scene.insertive_object": {
+#         "fbleg": make_insertive_object(f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/FurnitureBench/SquareLeg/square_leg.usd"),
+#         "fbdrawerbottom": make_insertive_object(
+#             f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/FurnitureBench/DrawerBottom/drawer_bottom.usd"
+#         ),
+#         "peg": make_insertive_object(f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Custom/Peg/peg.usd"),
+#     },
+#     "scene.receptive_object": {
+#         "fbtabletop": make_receptive_object(
+#             f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/FurnitureBench/SquareTableTop/square_table_top.usd"
+#         ),
+#         "fbdrawerbox": make_receptive_object(
+#             f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/FurnitureBench/DrawerBox/drawer_box.usd"
+#         ),
+#         "peghole": make_receptive_object(f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Custom/PegHole/peg_hole.usd"),
+#     },
+# }
+
+
+variants = {
+    "scene.insertive_object": {
+        "cube": make_insertive_object( str(get_octilab_assets_path() / "props" / "insertive_cube" / "insertive_cube.usd") ),
+        "peg": make_insertive_object(f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Custom/Peg/peg.usd")
+    },
+    "scene.receptive_object": {
+        "cube": make_receptive_object( str(get_octilab_assets_path() / "props" / "receptive_cube" / "receptive_cube.usd") ),
+        "peg": make_receptive_object(f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Custom/Peg/peg.usd")
+    },
+}
+
+
+@configclass
+class FrankaRobotiq2f85RlStateCfg(ManagerBasedRLEnvCfg):
+    scene: RlStateSceneCfg = RlStateSceneCfg(num_envs=32, env_spacing=1.5)
+    observations: ObservationsCfg = ObservationsCfg()
+    actions: FrankaRobotiq2f85RelativeOSCAction = FrankaRobotiq2f85RelativeOSCAction()
+    rewards: RewardsCfg = RewardsCfg()
+    terminations: TerminationsCfg = TerminationsCfg()
+    events: BaseEventCfg = MISSING
+    commands: CommandsCfg = CommandsCfg()
+    viewer: ViewerCfg = ViewerCfg(eye=(2.0, 0.0, 0.75), origin_type="world", env_index=0, asset_name="robot")
+    variants = variants
+
+    def __post_init__(self):
+        self.decimation = 12
+        self.episode_length_s = 8.0
+        # simulation settings
+        self.sim.dt = 1 / 120.0
+
+        # Contact and solver settings
+        self.sim.physx.solver_type = 1
+        self.sim.physx.max_position_iteration_count = 192
+        self.sim.physx.max_velocity_iteration_count = 1
+        self.sim.physx.bounce_threshold_velocity = 0.02
+        self.sim.physx.friction_offset_threshold = 0.01
+        self.sim.physx.friction_correlation_distance = 0.0005
+
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2**23
+        self.sim.physx.gpu_max_rigid_contact_count = 2**23
+        self.sim.physx.gpu_max_rigid_patch_count = 2**23
+        self.sim.physx.gpu_collision_stack_size = 2**31
+
+        # Render settings
+        self.sim.render.enable_dlssg = True
+        self.sim.render.enable_ambient_occlusion = True
+        self.sim.render.enable_reflections = True
+        self.sim.render.enable_dl_denoiser = True
+
+
+# Training configurations
+@configclass
+class FrankaRobotiq2f85RelCartesianOSCTrainCfg(FrankaRobotiq2f85RlStateCfg):
+    """Training configuration for Relative Cartesian OSC action space."""
+
+    events: TrainEventCfg = TrainEventCfg()
+    actions: FrankaRobotiq2f85RelativeOSCAction = FrankaRobotiq2f85RelativeOSCAction()
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        self.events.randomize_robot_actuator_parameters = EventTerm(
+            func=task_mdp.randomize_operational_space_controller_gains,
+            mode="reset",
+            params={
+                "action_name": "arm",
+                "stiffness_distribution_params": (1.3, 1.3),
+                "damping_distribution_params": (1.3, 1.3),
+                "operation": "scale",
+                "distribution": "uniform",
+            },
+        )
+
+
+@configclass
+class FrankaRobotiq2f85RelJointPosTrainCfg(FrankaRobotiq2f85RlStateCfg):
+    """Training configuration for Relative Joint Position action space."""
+
+    events: TrainEventCfg = TrainEventCfg()
+    actions: FrankaRobotiq2f85RelativeJointPositionAction = FrankaRobotiq2f85RelativeJointPositionAction()
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        self.events.randomize_robot_actuator_parameters = EventTerm(
+            func=task_mdp.randomize_actuator_gains,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", ".*_outer_knuckle_joint"]),
+                "stiffness_distribution_params": (0.5, 2.0),
+                "damping_distribution_params": (0.5, 2.0),
+                "operation": "scale",
+                "distribution": "log_uniform",
+            },
+        )
+
+
+# Evaluation configurations
+@configclass
+class FrankaRobotiq2f85RelCartesianOSCEvalCfg(FrankaRobotiq2f85RlStateCfg):
+    """Evaluation configuration for Relative Cartesian OSC action space."""
+
+    events: EvalEventCfg = EvalEventCfg()
+    actions: FrankaRobotiq2f85RelativeOSCAction = FrankaRobotiq2f85RelativeOSCAction()
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        self.episode_length_s = 4.0
+
+
+        self.events.randomize_robot_actuator_parameters = EventTerm(
+            func=task_mdp.randomize_operational_space_controller_gains,
+            mode="reset",
+            params={
+                "action_name": "arm",
+                "stiffness_distribution_params": (1.3, 1.3),
+                "damping_distribution_params": (1.3, 1.3),
+                "operation": "scale",
+                "distribution": "uniform",
+            },
+        )
+
+@configclass
+class FrankaRobotiq2f85RelJointPosEvalCfg(FrankaRobotiq2f85RlStateCfg):
+    """Evaluation configuration for Relative Joint Position action space."""
+
+    events: EvalEventCfg = EvalEventCfg()
+    actions: FrankaRobotiq2f85RelativeJointPositionAction = FrankaRobotiq2f85RelativeJointPositionAction()
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+        self.events.randomize_robot_actuator_parameters = EventTerm(
+            func=task_mdp.randomize_actuator_gains,
+            mode="reset",
+            params={
+                "asset_cfg": SceneEntityCfg("robot", joint_names=["panda_joint.*", ".*_outer_knuckle_joint"]),
+                "stiffness_distribution_params": (0.5, 2.0),
+                "damping_distribution_params": (0.5, 2.0),
+                "operation": "scale",
+                "distribution": "log_uniform",
+            },
+        )

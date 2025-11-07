@@ -6,6 +6,8 @@
 """Installation script for the 'isaaclab_tasks' python package."""
 
 import os
+import platform
+import sys
 import toml
 
 from setuptools import setup
@@ -27,9 +29,27 @@ INSTALL_REQUIRES = [
     # automate
     "scikit-learn",
     "numba",
+    "rtree",
 ]
 
 PYTORCH_INDEX_URL = ["https://download.pytorch.org/whl/cu128"]
+
+IS_LINUX_X86_64 = platform.system() == "Linux" and platform.machine() in ("x86_64", "AMD64")
+PYTHON_TAG = f"cp{sys.version_info.major}{sys.version_info.minor}"
+
+PYTORCH3D_WHEELS = {
+    "cp311": (
+        "https://github.com/MiroPsota/torch_packages_builder/releases/download/pytorch3d-0.7.8/"
+        "pytorch3d-0.7.8%2Bpt2.7.0cu128-cp311-cp311-linux_x86_64.whl"
+    ),
+    "cp310": (
+        "https://github.com/MiroPsota/torch_packages_builder/releases/download/pytorch3d-0.7.8/"
+        "pytorch3d-0.7.8%2Bpt2.7.0cu128-cp310-cp310-linux_x86_64.whl"
+    ),
+}
+
+if IS_LINUX_X86_64 and PYTHON_TAG in PYTORCH3D_WHEELS:
+    INSTALL_REQUIRES.append(f"pytorch3d @ {PYTORCH3D_WHEELS[PYTHON_TAG]}")
 
 # Installation operation
 setup(

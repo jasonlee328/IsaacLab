@@ -15,3 +15,17 @@ from .string import *
 from .timer import Timer
 from .types import *
 from .version import *
+
+from .paths import (
+    get_isaaclab_assets_path,
+    get_isaaclab_data_path,
+    get_isaaclab_grasp_datasets_path,
+    get_isaaclab_partial_assembly_datasets_path,
+    get_isaaclab_reset_state_datasets_path,
+    get_isaaclab_root,
+    get_octilab_assets_path,
+    get_octilab_data_path,
+    get_octilab_grasp_datasets_path,
+    get_octilab_partial_assembly_datasets_path,
+    get_octilab_reset_state_datasets_path,
+)

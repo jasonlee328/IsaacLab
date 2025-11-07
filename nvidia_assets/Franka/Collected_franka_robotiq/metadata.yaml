@@ -1,11 +1,30 @@
 # Robotiq 2F-85 Gripper Metadata
 # Offset information for frame tracking
+#
+# Physical frame: Franka's panda_link7 has gripper pointing along local -Z direction
+# This is different from UR5e which has gripper pointing along local +X direction
+#
+# Euler angle frame convention:
+# To maintain compatibility with UR5e-style config files, we define an offset that's
+# automatically applied when converting Euler angles to quaternions for IK.
+# This allows all config files to use the same Euler angle ranges regardless of robot.
+
+# Euler angle coordinate frame offset (applied automatically by event functions)
+euler_frame_offset:
+  pitch: 1.5707963267948966  # +π/2 radians (+90°)
+  # This converts UR5e convention to Franka convention:
+  # UR5e pitch=π/2 (straight down) → Franka needs pitch=π (straight down)
+  # So we add +π/2 offset: π/2 + π/2 = π ✓
+
+
+
+grasp_frame_offset:
+  pos: [0.0, 0.0, 0.0]
+  quat: [0, 0, 0.0, 1]
 
 gripper_offset:
   # Offset from panda_link7 (wrist flange) to gripper tip (TCP = 174mm)
-  # NOTE: Use NEGATIVE z-offset because panda_link7's local z-axis points backward (toward robot base)
-  # The TCP is 174mm away from the flange in the direction opposite to the local +z axis
-  # This applies to Franka robots with Robotiq 2F-85 gripper attached
+  # Physical reality: TCP is 174mm along -Z direction from panda_link7
   pos: [0.0, 0.0, -0.174]
   quat: [1.0, 0.0, 0.0, 0.0]
 
@@ -13,4 +32,36 @@ offset:
   # Offset for robot base (identity, no offset)
   pos: [0.0, 0.0, 0.0]
   quat: [1.0, 0.0, 0.0, 0.0]
+
+# Gripper approach direction in PHYSICAL panda_link7 frame (used for orientation checks)
+# The custom asset exposes the TCP along +Z
+gripper_approach_direction: [0, 0, 1]
+
+# Gripper approach direction in LOGICAL frame (used for grasp sampling with UR5e convention)
+# After applying the +π/2 pitch offset the logical -X maps to the physical +Z
+gripper_approach_direction_logical: [-1, 0, 0]
+
+# Grasp alignment axis - PHYSICAL frame (for orientation checks)
+grasp_align_axis: [0, 0, 1]
+
+# Grasp alignment axis - LOGICAL frame (for grasp sampling)
+grasp_align_axis_logical: [-1, 0, 0]
+
+# Orientation sampling axis - LOGICAL frame (for grasp generation)
+orientation_sample_axis: [1, 0, 0]
+
+# Gripper body name for pose tracking (used by recorders)
+gripper_body_name: robotiq_arg2f_base_link
+
+# Finger parameters for grasp sampling
+finger_offset: 0.174  # Distance from panda_link7 to gripper TCP
+finger_clearance: 0.06  # Clearance needed for fingers
+maximum_aperture: 0.085  # Maximum gripper opening (Robotiq 2F-85 spec)
+finger_open_joint_angle: 0.0  # Gripper fully open joint angle
+
+# Grasp recorder joint filters (matches full Franka articulation structure)
+grasp_recorder_joint_name_exprs:
+  - ".*_outer_knuckle_joint"
+  - ".*_inner_finger_joint"
+  - "RevoluteJoint.*"
 

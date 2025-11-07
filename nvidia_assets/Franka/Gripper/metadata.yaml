@@ -1,0 +1,38 @@
+gripper_body_name: robotiq_arg2f_base_link
+
+# Offset from gripper base to TCP (matches full Franka gripper)
+gripper_offset:
+  pos: [0.0, 0.0, -0.174]
+  quat: [1.0, 0.0, 0.0, 0.0]
+
+# Robot base offset (identity for gripper-only wrapper)
+offset:
+  pos: [0.0, 0.0, 0.0]
+  quat: [1.0, 0.0, 0.0, 0.0]
+
+# Grasp frame conventions (matching UR5e standalone gripper convention)
+# Approach direction: matches UR5e standalone which uses [0,0,1] with TCP at base
+# For Franka: TCP is 174mm at -Z from base, so we use negative finger_offset to compensate
+gripper_approach_direction: [0, 0, 1]
+grasp_align_axis: [0, 0, 1]
+orientation_sample_axis: [1, 0, 0]
+
+# Recorder filters: record both outer knuckles and inner fingers; include mimic revolutes if exposed
+grasp_recorder_joint_name_exprs:
+  - ".*_outer_knuckle_joint"
+  - ".*_inner_finger_joint"
+  - "RevoluteJoint.*"
+
+# Gripper geometry
+maximum_aperture: 0.085
+finger_open_joint_angle: 0.0
+# Distance from gripper base (robotiq_arg2f_base_link) to TCP along approach direction
+# The TCP is 174mm along -Z from the base link (matching gripper_offset)
+# With approach_direction=[0,0,1], we need negative offset:
+#   standoff_translation = [0,0,1] * -(-0.174) = [0,0,0.174]
+#   gripper_base = object_center + [0,0,0.174]
+#   TCP = gripper_base + [0,0,-0.174] = object_center ✓
+finger_offset: 0.15
+finger_clearance: 0.06
+
+

@@ -1,0 +1,15 @@
+# Metadata for cube asset
+# This defines the positioning and assembly offsets for the cube
+
+# Offset when the cube is assembled/inserted into a goal position
+assembled_offset:
+  pos: [0.0, 0.0, -0.02]  # Alignment point at bottom of cube (2cm down from center)
+  quat: [1.0, 0.0, 0.0, 0.0]  # Identity rotation
+
+# Offset from cube center to bottom surface (for proper placement on surfaces)
+bottom_offset:
+  pos: [0.0, 0.0, -0.02]  # Half the height of a 5cm cube
+  quat: [1.0, 0.0, 0.0, 0.0]  # Must be identity rotation
+
+# Optional: Target mesh path for collision detection
+# Not needed for cube as the mesh is at the root prim

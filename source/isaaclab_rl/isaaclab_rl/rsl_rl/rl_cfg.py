@@ -48,6 +48,17 @@ class RslRlPpoActorCriticCfg:
 
 
 @configclass
+class RslRlFancyActorCriticCfg(RslRlPpoActorCriticCfg):
+    """Configuration for the fancy actor-critic networks."""
+
+    state_dependent_std: bool = False
+    """Whether to use state-dependent standard deviation."""
+
+    noise_std_type: Literal["scalar", "log", "gsde"] = "scalar"
+    """The type of noise standard deviation for the policy. Default is scalar."""
+
+
+@configclass
 class RslRlPpoActorCriticRecurrentCfg(RslRlPpoActorCriticCfg):
     """Configuration for the PPO actor-critic networks with recurrent layers."""
 

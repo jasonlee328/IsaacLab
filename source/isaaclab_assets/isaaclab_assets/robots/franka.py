@@ -274,7 +274,7 @@ Gripper Control:
 # Base articulation configuration (no actuators yet - robot agnostic)
 FRANKA_ROBOTIQ_BASE_ARTICULATION = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/home/jason/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
+        usd_path="/home/tyler2/JasonLab/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
         activate_contact_sensors=False,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
@@ -393,6 +393,57 @@ Gripper Control:
 """
 
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG = FRANKA_ROBOTIQ_BASE_ARTICULATION.copy()
+# Standalone Robotiq 2F-85 gripper extracted from full Franka robot
+# This ensures the gripper has the exact same joint structure as the full robot
+FRANKA_ROBOTIQ_GRIPPER_STANDALONE = ArticulationCfg(
+    prim_path="{ENV_REGEX_NS}/Robot",
+    spawn=sim_utils.UsdFileCfg(
+        usd_path="/home/tyler2/JasonLab/IsaacLab/nvidia_assets/2F-85/Collected_2f85_instanceable/2f85_instanceable.usd",
+        activate_contact_sensors=False,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=True,
+            max_depenetration_velocity=5.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=36,
+            solver_velocity_iteration_count=0
+        ),
+        mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0, 0, 0.1),
+        rot=(1, 0, 0, 0),
+        joint_pos={
+            ".*_outer_knuckle_joint": 0.0,  # Open position
+            ".*_inner_finger_joint": 0.0,   # Passive joints
+        },
+    ),
+    actuators={
+        # Main actuated joint (drives mimic chain)
+        "gripper": ImplicitActuatorCfg(
+            joint_names_expr=["finger_joint"],
+            stiffness=17,
+            damping=5,
+            effort_limit_sim=165,
+        ),
+        # Outer knuckle compliance/control
+        "outer_knuckle": ImplicitActuatorCfg(
+            joint_names_expr=[".*_outer_knuckle_joint"],
+            stiffness=10,
+            damping=2,
+            effort_limit_sim=50,
+        ),
+        # Inner finger joints (passive/mimic joints)
+        "inner_finger": ImplicitActuatorCfg(
+            joint_names_expr=[".*_inner_finger_joint"],
+            stiffness=1.0,
+            damping=0.1,
+            effort_limit_sim=5,
+        ),
+    },
+)
+
 FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.actuators = {
     # Arm actuators with per-joint tuning (robot-specific parameters)
     "arm": ImplicitActuatorCfg(
@@ -427,19 +478,20 @@ FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.actuators = {
         },
     ), 
     # Robotiq gripper actuators (pre-assembled USD uses outer_knuckle_joints)
+    # Settings match grasp sampling wrapper to ensure consistent behavior
     "gripper": ImplicitActuatorCfg(
         joint_names_expr=[".*_outer_knuckle_joint"],  # Main actuated joints
-        effort_limit_sim=200.0,
+        effort_limit_sim=165.0,  # Match UR5e/grasp sampling (was 200.0)
         velocity_limit_sim=0.2,
-        stiffness=2e3,
-        damping=1e2,
+        stiffness=17.0,  # Match UR5e/grasp sampling (was 2000, too high causing slipping)
+        damping=5.0,  # Match UR5e/grasp sampling (was 100)
     ),
     # Passive inner finger joints (compliant, minimal control)
     "inner_finger": ImplicitActuatorCfg(
         joint_names_expr=[".*_inner_finger_joint"],
-        effort_limit_sim=50.0,
+        effort_limit_sim=0.5,  # Match UR5e/grasp sampling (was 50.0)
         velocity_limit_sim=10.0,
-        stiffness=0.2,
-        damping=0.001,
+        stiffness=0.2,  # Match UR5e/grasp sampling
+        damping=0.02,  # Match UR5e/grasp sampling (was 0.001)
     ),
 }

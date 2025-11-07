@@ -591,6 +591,7 @@ class PushObservationsCfg:
     
     # observation groups
     policy: PolicyCfg = PolicyCfg()
+
     
 @configclass
 class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainCfg):
@@ -604,15 +605,15 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
         threshold = 0.02  # Position threshold: 3cm
         cube_x_range = (0.725, 0.725)  # Forward distance from robot
         cube_y_range = (0.0, 0.0)  # Lateral offset from robot center
-        target_x_range = (-0.10, 0.10)  # Forward/backward from cube
-        target_y_range = (-0.10, 0.10)  # Left/right from cube
+        target_x_range = (-0.1, 0.1)  # Forward/backward from cube
+        target_y_range = (-0.1, 0.1)  # Left/right from cube
         self.observations = PushObservationsCfg()
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
         self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
         self.commands.ee_pose.ranges.pos_x = target_x_range
         self.commands.ee_pose.ranges.pos_y = target_y_range
         self.commands.ee_pose.success_threshold = threshold
-        self.commands.ee_pose.min_distance = 0.10
+        self.commands.ee_pose.min_distance = 0.40
         self.rewards.reaching_goal = None  # Remove position-only reward
         self.rewards.reaching_goal = RwdTerm(
             func=push_mdp.object_reached_goal,
@@ -624,6 +625,56 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
             weight=1.0,  # Sparse reward: +1 for success (both position and orientation)
         )
 
+
+@configclass
+class PushDistractorObservationsCfg:
+    """Observations for push task with distractors."""
+    
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for policy group - includes distractor positions."""
+        
+        # Robot observations
+        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        
+        # End-effector observations
+        ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
+        ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
+        
+        # Target cube observations
+        cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
+        target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
+        
+        # Cube position relative to goal
+        cube_pos_goal = ObsTerm(
+            func=push_observations.cube_in_target_frame,
+            params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
+        )
+        
+        # Distractor observations
+        distractor_positions = ObsTerm(
+            func=push_observations.distractor_positions_rel,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+                "distractor_2_cfg": SceneEntityCfg("distractor_2")
+            }
+        )
+        
+        # distractor_orientations = ObsTerm(
+        #     func=push_observations.distractor_quats_rel,
+        #     params={
+        #         "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+        #         "distractor_2_cfg": SceneEntityCfg("distractor_2")
+        #     }
+        # )
+        
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+    
+    # observation groups
+    policy: PolicyCfg = PolicyCfg()
 
 
 @configclass
@@ -728,58 +779,7 @@ class FrankaRobotiq2f85CustomOmniPushDistractorEnvCfg(FrankaRobotiq2f85CustomOmn
         self.commands.ee_pose.success_threshold = threshold
         self.commands.ee_pose.min_distance = 0.15
         
-        # Create custom observations that include distractors
-        @configclass
-        class PushDistractorObservationsCfg:
-            """Observations for push task with distractors."""
-            
-            @configclass
-            class PolicyCfg(ObsGroup):
-                """Observations for policy group - includes distractor positions."""
-                
-                # Robot observations
-                joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
-                joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
-                
-                # End-effector observations
-                ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
-                ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
-                
-                # Target cube observations
-                cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
-                target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
-                
-                # Cube position relative to goal
-                cube_pos_goal = ObsTerm(
-                    func=push_observations.cube_in_target_frame,
-                    params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
-                )
-                
-                # Distractor observations
-                distractor_positions = ObsTerm(
-                    func=push_observations.distractor_positions_rel,
-                    params={
-                        "distractor_1_cfg": SceneEntityCfg("distractor_1"),
-                        "distractor_2_cfg": SceneEntityCfg("distractor_2")
-                    }
-                )
-                
-                # distractor_orientations = ObsTerm(
-                #     func=push_observations.distractor_quats_rel,
-                #     params={
-                #         "distractor_1_cfg": SceneEntityCfg("distractor_1"),
-                #         "distractor_2_cfg": SceneEntityCfg("distractor_2")
-                #     }
-                # )
-                
-                def __post_init__(self):
-                    self.enable_corruption = False
-                    self.concatenate_terms = True
-            
-            # observation groups
-            policy: PolicyCfg = PolicyCfg()
-        
-        # Set the custom observations
+        # Set the custom observations that include distractors
         self.observations = PushDistractorObservationsCfg()
         
         # Set rewards
