@@ -214,7 +214,7 @@ class ResetStatesBaseEventCfg:
             "pose_range": {
                 "x": (0.0, 0.2), #table offset is 0.5 in x direction 
                 "y": (-0.1, 0.1),
-                "z": (0.06, 0.06),  # Table height (matches Franka push config)
+                "z": (0.0203, 0.0203),  # Table height (matches Franka push config)
                 "roll": (0, 0),
                 "pitch": (0, 0),
                 "yaw": (-np.pi/12, np.pi/12),
@@ -316,24 +316,28 @@ class ObjectRestingEERoundInsertiveEventCfg(ResetStatesBaseEventCfg):
         },
     )
 
-    # Then, position the end effector around the insertive object (instead of using grasp dataset)
+    # Then, position the end effector around the insertive object with gripper offset compensation
+    # This accounts for the gripper offset so that position deltas are relative to the object's TCP position
     reset_end_effector_pose_around_insertive = EventTerm(
-        func=task_mdp.reset_end_effector_round_fixed_asset,
+        func=task_mdp.reset_end_effector_relative_to_object_with_gripper_offset,
         mode="reset",
         params={
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),  # Target the insertive object
-            "fixed_asset_offset": None,  # No additional offset
-            "pose_range_b": {
-                "x": (-0.1, 0.1),      # Distance range from insertive object
-                "y": (-0.1, 0.1),     # Lateral range
-                "z": (0.0, 0.1),      # Height range
-                "roll": (0.0, 0.0),   # No roll variation
-                "pitch": (np.pi / 3, 2 * np.pi / 3),  # 60° to 120° - tighter around straight down
-                "yaw": (0.0, 2 * np.pi),              # Full yaw range (0° to 360°)
+            "fixed_asset_offset": None,  # No additional offset on the target object
+            "position_range_b": {
+                "x": (-0.03, 0.03),      # Distance range from insertive object (sampled)
+                "y": (-0.03, 0.03),     # Lateral range (sampled)
+                "z": (-0.01, 0.02),        # Height range relative to object (sampled, 0 means at object level)
+            },
+            "rotation_range_b": {
+                "roll": (0.0, 0.0),             # Roll range (use (value, value) for fixed values)
+                "pitch": (np.pi / 3, 2 * np.pi / 3),  # Pitch range: UR5e convention - euler_frame_offset applied automatically
+                "yaw": (np.pi / 2, 3 * np.pi / 2),    # Yaw range
             },
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["panda_joint.*"], body_names="robotiq_arg2f_base_link"
             ),
+            "gripper_offset_metadata_key": "gripper_offset",  # Read gripper_offset from metadata
         },
     )
 
@@ -360,9 +364,9 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
                 "x": (-0.05, 0.35),
                 "y": (-0.25, 0.25),
                 "z": (0.02, 0.3),  # Table height (matches Franka push config)
-                "roll": (0, 0),
-                "pitch": (0, 0),
-                "yaw": (-np.pi/12, np.pi/12),
+                "roll": (-np.pi, np.pi),
+                "pitch": (-np.pi, np.pi),
+                "yaw": (-np.pi, np.pi),
             },
             "velocity_range": {},
             "asset_cfgs": {"insertive_object": SceneEntityCfg("insertive_object")},
@@ -442,10 +446,10 @@ class ObjectNearReceptiveEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "pose_range": {
                 "x": (-0.02, 0.02),      # Box size: 10cm x 10cm x 5cm
                 "y": (-0.02, 0.02), 
-                "z": (0.041, 0.06),
-                "roll": (-np.pi/8, np.pi/8),    # Small orientation variation
-                "pitch": (-np.pi/8, np.pi/8),
-                "yaw": (-np.pi/8, np.pi/8),
+                "z": (0.045, 0.06),
+                "roll": (0,0),    # Small orientation variation
+                "pitch": (0, 0),
+                "yaw": (0, 0),
             },
             "insertive_asset_cfg": SceneEntityCfg("insertive_object"),
             "receptive_asset_cfg": SceneEntityCfg("receptive_object"),
@@ -486,6 +490,15 @@ class ResetStatesTerminationCfg:
 
     abnormal_robot = DoneTerm(func=task_mdp.abnormal_robot_state)
 
+    gripper_orientation_limit = DoneTerm(
+        func=task_mdp.gripper_orientation_limit,
+        params={
+            "robot_cfg": SceneEntityCfg("robot"),
+            "ee_body_name": "panda_link7",
+            "max_angle_from_down": np.pi / 3,
+        },
+    )
+
     success = DoneTerm(
         func=task_mdp.check_reset_state_success,
         params={
@@ -494,23 +507,23 @@ class ResetStatesTerminationCfg:
             "ee_body_name": "panda_link7",
             "collision_analyzer_cfgs": [
                 task_mdp.CollisionAnalyzerCfg(
-                    num_points=1024,
+                    num_points=256,
                     max_dist=0.5,
                     min_dist=-0.0005,
                     asset_cfg=SceneEntityCfg("robot"),
                     obstacle_cfgs=[SceneEntityCfg("insertive_object")],
                 ),
                 task_mdp.CollisionAnalyzerCfg(
-                    num_points=1024,
+                    num_points=256,
                     max_dist=0.5,
-                    min_dist=0.00001,
+                    min_dist=0.001,
                     asset_cfg=SceneEntityCfg("robot"),
                     obstacle_cfgs=[SceneEntityCfg("receptive_object")],
                 ),
                 task_mdp.CollisionAnalyzerCfg(
-                    num_points=1024,
+                    num_points=2048,
                     max_dist=0.5,
-                    min_dist=0.00001,
+                    min_dist=0.0025,
                     asset_cfg=SceneEntityCfg("insertive_object"),
                     obstacle_cfgs=[SceneEntityCfg("receptive_object")],
                 ),
@@ -519,6 +532,7 @@ class ResetStatesTerminationCfg:
             "max_object_pos_deviation": MISSING,
             "pos_z_threshold": -0.01,
             "consecutive_stability_steps": 5,
+            "max_gripper_angle_from_down": np.pi / 3,
         },
         time_out=True,
     )
@@ -550,7 +564,7 @@ def make_insertive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.001),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -587,7 +601,7 @@ def make_receptive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -673,7 +687,7 @@ class ObjectAnywhereEEAnywhereResetStatesCfg(FrankaRobotiq2f85ResetStatesCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        self.terminations.success.params["max_object_pos_deviation"] = np.inf
+        self.terminations.success.params["max_object_pos_deviation"] = 0.1
 
 
 @configclass
@@ -702,7 +716,7 @@ class ObjectRestingEERoundInsertiveResetStatesCfg(FrankaRobotiq2f85ResetStatesCf
 
     def __post_init__(self):
         super().__post_init__()
-        self.terminations.success.params["max_object_pos_deviation"] = 0.01
+        self.terminations.success.params["max_object_pos_deviation"] = 0.03
 
 
 @configclass

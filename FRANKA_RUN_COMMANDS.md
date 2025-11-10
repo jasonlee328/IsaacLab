@@ -106,7 +106,7 @@ python scripts_v2/tools/record_reset_states.py \
 ```bash
 python scripts_v2/tools/record_reset_states.py \
   --task OmniReset-FrankaRobotiq2f85-ObjectNearReceptiveEEGrasped-v0 \
-  --num_envs 8192 \
+  --num_envs 4096 \
   --num_reset_states 1000 \
   --dataset_dir ./reset_state_datasets/ObjectNearReceptiveEEGrasped \
   --headless \
@@ -134,8 +134,6 @@ python scripts_v2/tools/visualize_reset_states.py \
 python scripts/reinforcement_learning/rsl_rl/train.py \
   --task OmniReset-FrankaRobotiq2f85-RelCartesianOSC-State-v0 \
   --num_envs 8192 \
-  --job_type train \
-  --rl_framework rslrl \
   --logger wandb \
   --headless \
   env.scene.insertive_object=cube \

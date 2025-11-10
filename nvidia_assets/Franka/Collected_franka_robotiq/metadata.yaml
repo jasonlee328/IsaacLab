@@ -23,9 +23,12 @@ grasp_frame_offset:
   quat: [0, 0, 0.0, 1]
 
 gripper_offset:
-  # Offset from panda_link7 (wrist flange) to gripper tip (TCP = 174mm)
-  # Physical reality: TCP is 174mm along -Z direction from panda_link7
-  pos: [0.0, 0.0, -0.174]
+  # Offset from robotiq_arg2f_base_link to gripper tip (TCP = 174mm)
+  # This offset is used by observations and rewards which reference robotiq_arg2f_base_link
+  # The custom asset exposes the TCP along +Z from robotiq_arg2f_base_link (see line 38)
+  # So TCP is 174mm along +Z direction from robotiq_arg2f_base_link
+  # Note: This is different from panda_link7 frame where TCP would be along -Z
+  pos: [0.0, 0.0, 0.15]
   quat: [1.0, 0.0, 0.0, 0.0]
 
 offset:

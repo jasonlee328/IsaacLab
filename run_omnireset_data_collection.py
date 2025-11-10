@@ -14,7 +14,7 @@ def main():
     subprocess.run([
         "python", "scripts_v2/tools/record_grasps.py",
         "--task", "OmniReset-FrankaRobotiq2f85-GraspSampling-v0",
-        "--num_envs", "2048",
+        "--num_envs", "4096",
         "--num_grasps", str(args.num_grasps),
         "--dataset_dir", "./grasp_datasets",
         "--headless",
@@ -25,7 +25,7 @@ def main():
     subprocess.run([
         "python", "scripts_v2/tools/record_reset_states.py",
         "--task", "OmniReset-FrankaRobotiq2f85-ObjectAnywhereEEAnywhere-v0",
-        "--num_envs", "2048",
+        "--num_envs", "4096",
         "--num_reset_states", str(args.num_reset_states),
         "--headless",
         "--dataset_dir", "./reset_state_datasets/ObjectAnywhereEEAnywhere",
@@ -33,14 +33,14 @@ def main():
         "env.scene.receptive_object=cube"
     ], check=True)
     
-    # 3. Reset States - Object Resting, End-Effector Grasped
+    # 3. Reset States - Object Resting, End-Effector Around Insertive
     subprocess.run([
         "python", "scripts_v2/tools/record_reset_states.py",
-        "--task", "OmniReset-FrankaRobotiq2f85-ObjectRestingEEGrasped-v0",
-        "--num_envs", "2048",
+        "--task", "OmniReset-FrankaRobotiq2f85-ObjectRestingEEAroundInsertive-v0",
+        "--num_envs", "4096",
         "--num_reset_states", str(args.num_reset_states),
         "--headless",
-        "--dataset_dir", "./reset_state_datasets/ObjectRestingEEGrasped",
+        "--dataset_dir", "./reset_state_datasets/ObjectRestingEEAroundInsertive",
         "env.scene.insertive_object=cube",
         "env.scene.receptive_object=cube"
     ], check=True)
@@ -49,7 +49,7 @@ def main():
     subprocess.run([
         "python", "scripts_v2/tools/record_reset_states.py",
         "--task", "OmniReset-FrankaRobotiq2f85-ObjectAnywhereEEGrasped-v0",
-        "--num_envs", "2048",
+        "--num_envs", "4096",
         "--num_reset_states", str(args.num_reset_states),
         "--headless",
         "--dataset_dir", "./reset_state_datasets/ObjectAnywhereEEGrasped",
@@ -61,12 +61,23 @@ def main():
     subprocess.run([
         "python", "scripts_v2/tools/record_reset_states.py",
         "--task", "OmniReset-FrankaRobotiq2f85-ObjectNearReceptiveEEGrasped-v0",
-        "--num_envs", "2048",
+        "--num_envs", "4096",
         "--num_reset_states", str(args.num_reset_states),
         "--headless",
         "--dataset_dir", "./reset_state_datasets/ObjectNearReceptiveEEGrasped",
         "env.scene.insertive_object=cube",
         "env.scene.receptive_object=cube"
+    ], check=True)
+ 
+    # 6. Reinforcement Learning training
+    subprocess.run([
+        "python", "scripts/reinforcement_learning/rsl_rl/train.py",
+        "--task", "OmniReset-FrankaRobotiq2f85-RelCartesianOSC-State-v0",
+        "--num_envs", "8192",
+        "--logger", "wandb",
+        "--headless",
+        "env.scene.insertive_object=cube",
+        "env.scene.receptive_object=cube",
     ], check=True)
 
 

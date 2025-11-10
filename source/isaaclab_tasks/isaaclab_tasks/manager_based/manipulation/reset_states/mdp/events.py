@@ -651,6 +651,153 @@ class reset_end_effector_round_fixed_asset(ManagerTermBase):
             )
 
 
+class reset_end_effector_relative_to_object_with_gripper_offset(ManagerTermBase):
+    """Reset end effector pose relative to a target object with gripper offset compensation.
+    
+    This function positions the end effector such that:
+    - Position deltas (x, y, z) are sampled from ranges and applied relative to the target object
+    - Rotations (roll, pitch, yaw) are sampled from ranges (use (value, value) for fixed values)
+    - Gripper offset is automatically accounted for (TCP positioning)
+    - Euler frame offset is applied for robot-specific coordinate conventions
+    """
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        fixed_asset_cfg: SceneEntityCfg = cfg.params.get("fixed_asset_cfg")  # type: ignore
+        fixed_asset_offset: Offset = cfg.params.get("fixed_asset_offset")  # type: ignore
+        position_range_b: dict[str, tuple[float, float]] = cfg.params.get("position_range_b")  # type: ignore
+        rotation_range_b: dict[str, tuple[float, float]] = cfg.params.get("rotation_range_b")  # type: ignore
+        robot_ik_cfg: SceneEntityCfg = cfg.params.get("robot_ik_cfg", SceneEntityCfg("robot"))
+        gripper_offset_metadata_key: str = cfg.params.get("gripper_offset_metadata_key", "gripper_offset")  # type: ignore
+
+        # Extract position ranges (x, y, z)
+        pos_range_list = [
+            position_range_b.get(key, (0.0, 0.0)) for key in ["x", "y", "z"]
+        ]
+        self.pos_ranges = torch.tensor(pos_range_list, device=env.device)
+        
+        # Extract rotation ranges (roll, pitch, yaw)
+        rot_range_list = [
+            rotation_range_b.get(key, (0.0, 0.0)) for key in ["roll", "pitch", "yaw"]
+        ]
+        self.rot_ranges = torch.tensor(rot_range_list, device=env.device)
+        
+        self.fixed_asset: Articulation | RigidObject = env.scene[fixed_asset_cfg.name]
+        self.fixed_asset_offset: Offset = fixed_asset_offset
+        self.robot: Articulation = env.scene[robot_ik_cfg.name]
+        self.joint_ids: list[int] | slice = robot_ik_cfg.joint_ids
+        self.n_joints: int = self.robot.num_joints if isinstance(self.joint_ids, slice) else len(self.joint_ids)
+        
+        # Load robot metadata to get euler_frame_offset and gripper_offset
+        robot_usd_path = self.robot.cfg.spawn.usd_path
+        metadata = utils.read_metadata_from_usd_directory(robot_usd_path)
+        
+        # Get euler_frame_offset (for robot-specific coordinate conventions)
+        euler_offset = metadata.get("euler_frame_offset", {})
+        self.pitch_offset = euler_offset.get("pitch", 0.0)  # Default to 0 if not specified (e.g., UR5e)
+        
+        # Get gripper_offset (from base_link to TCP) as an Offset object
+        gripper_offset_data = metadata.get(gripper_offset_metadata_key, {})
+        if isinstance(gripper_offset_data, dict):
+            self.gripper_offset = Offset(
+                pos=tuple(gripper_offset_data.get("pos", [0.0, 0.0, 0.0])),
+                quat=tuple(gripper_offset_data.get("quat", [1.0, 0.0, 0.0, 0.0])),
+            )
+        else:
+            # Fallback if gripper_offset is not found (identity offset)
+            self.gripper_offset = Offset(pos=(0.0, 0.0, 0.0), quat=(1.0, 0.0, 0.0, 0.0))
+        
+        robot_ik_solver_cfg = DifferentialInverseKinematicsActionCfg(
+            asset_name=robot_ik_cfg.name,
+            joint_names=robot_ik_cfg.joint_names,  # type: ignore
+            body_name=robot_ik_cfg.body_names,  # type: ignore
+            controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
+            scale=1.0,
+        )
+        self.solver: DifferentialInverseKinematicsAction = robot_ik_solver_cfg.class_type(robot_ik_solver_cfg, env)  # type: ignore
+        self.reset_velocity = torch.zeros((env.num_envs, self.robot.data.joint_vel.shape[1]), device=env.device)
+        self.reset_position = torch.zeros((env.num_envs, self.robot.data.joint_pos.shape[1]), device=env.device)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        fixed_asset_cfg: SceneEntityCfg,
+        fixed_asset_offset: Offset,
+        position_range_b: dict[str, tuple[float, float]],
+        rotation_range_b: dict[str, tuple[float, float]],
+        robot_ik_cfg: SceneEntityCfg,
+        gripper_offset_metadata_key: str = "gripper_offset",
+    ) -> None:
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.long)
+
+        if env_ids.numel() == 0:
+            return
+
+        env_ids = env_ids.long()
+
+        # Get target object pose (with optional offset)
+        if fixed_asset_offset is None:
+            target_obj_pos_w_all = env.scene[fixed_asset_cfg.name].data.root_pos_w
+        else:
+            target_obj_pos_w_all, _ = self.fixed_asset_offset.apply(self.fixed_asset)
+
+        target_obj_pos_w = target_obj_pos_w_all[env_ids]
+
+        # Sample position deltas from ranges (x, y, z)
+        pos_samples = math_utils.sample_uniform(
+            self.pos_ranges[:, 0], self.pos_ranges[:, 1], (env_ids.numel(), 3), device=env.device
+        )
+
+        # Compute desired TCP position relative to target object
+        desired_tcp_pos_w = target_obj_pos_w + pos_samples
+
+        # Sample rotation values from ranges (roll, pitch, yaw)
+        rot_samples = math_utils.sample_uniform(
+            self.rot_ranges[:, 0], self.rot_ranges[:, 1], (env_ids.numel(), 3), device=env.device
+        )
+
+        # Compute desired TCP orientation from sampled rotation values
+        # Apply euler_frame_offset to pitch for robot-specific coordinate conventions
+        pitch_adjusted = rot_samples[:, 1] + self.pitch_offset
+        desired_tcp_quat_w = math_utils.quat_from_euler_xyz(
+            rot_samples[:, 0],  # roll
+            pitch_adjusted,  # pitch (with euler_frame_offset)
+            rot_samples[:, 2],  # yaw
+        )
+
+        # Account for gripper_offset: convert TCP pose to base_link pose
+        # gripper_offset is from base_link to TCP, so we use Offset.subtract to invert it
+        # This correctly handles both position and rotation offsets
+        desired_base_link_pos_w, desired_base_link_quat_w = self.gripper_offset.subtract(
+            desired_tcp_pos_w, desired_tcp_quat_w
+        )
+
+        # Convert to robot base frame
+        desired_base_link_pos_b, desired_base_link_quat_b = math_utils.subtract_frame_transforms(
+            self.robot.data.root_link_pos_w[env_ids],
+            self.robot.data.root_link_quat_w[env_ids],
+            desired_base_link_pos_w,
+            desired_base_link_quat_w,
+        )
+
+        # Set IK target
+        all_actions = self.solver.raw_actions.clone()
+        all_actions[env_ids] = torch.cat([desired_base_link_pos_b, desired_base_link_quat_b], dim=1)
+        self.solver.process_actions(all_actions)
+
+        # Solve IK iteratively
+        for i in range(10):
+            self.solver.apply_actions()
+            delta_joint_pos = 0.25 * (self.robot.data.joint_pos_target[env_ids] - self.robot.data.joint_pos[env_ids])
+            self.robot.write_joint_state_to_sim(
+                position=(delta_joint_pos + self.robot.data.joint_pos[env_ids])[:, self.joint_ids],
+                velocity=torch.zeros((len(env_ids), self.n_joints), device=env.device),
+                joint_ids=self.joint_ids,
+                env_ids=env_ids,  # type: ignore
+            )
+
+
 class reset_end_effector_from_grasp_dataset(ManagerTermBase):
     """Reset end effector pose using saved grasp dataset from grasp sampling."""
 

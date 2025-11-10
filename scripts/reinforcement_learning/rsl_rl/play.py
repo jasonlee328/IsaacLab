@@ -184,6 +184,35 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         with torch.inference_mode():
             # agent stepping
             actions = policy(obs)
+            
+            # Robust action handling for single environment case
+            # Some policies may return a tuple; take the first element
+            if isinstance(actions, tuple):
+                actions = actions[0]
+            
+            # Ensure actions are a tensor
+            if not isinstance(actions, torch.Tensor):
+                actions = torch.tensor(actions, device=env.unwrapped.device, dtype=torch.float32)
+            
+            # Ensure actions are 2D: (num_envs, action_dim)
+            # This is critical for single environment case where policy might return 1D tensor
+            if actions.ndim == 1:
+                actions = actions.unsqueeze(0)
+            elif actions.ndim == 0:
+                # Scalar case (shouldn't happen, but be defensive)
+                actions = actions.unsqueeze(0).unsqueeze(0)
+            
+            # Ensure actions are on correct device and dtype
+            actions = actions.to(device=env.unwrapped.device, dtype=torch.float32)
+            
+            # Verify action shape matches expected dimensions
+            num_envs = env.unwrapped.num_envs
+            if actions.shape[0] != num_envs:
+                raise ValueError(
+                    f"Action batch size mismatch: expected {num_envs} environments, "
+                    f"but got actions with shape {actions.shape}"
+                )
+            
             # env stepping
             obs, _, _, _ = env.step(actions)
         if args_cli.video:

@@ -61,7 +61,7 @@ WRAPPED_FRANKA_GRIPPER = ArticulationCfg(
         "gripper": ImplicitActuatorCfg(
             joint_names_expr=[".*_outer_knuckle_joint"],
             effort_limit_sim=165.0,  # Match UR5e
-            velocity_limit_sim=0.2,
+            # velocity_limit_sim not specified - matches UR5e (uses USD default, allowing faster closing)
             stiffness=17.0,  # Match UR5e (was 2000, way too high causing penetration)
             damping=5.0,  # Match UR5e (was 100)
         ),

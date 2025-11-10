@@ -26,6 +26,39 @@ def abnormal_robot_state(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = Sce
     return (robot.data.joint_vel.abs() > (robot.data.joint_vel_limits * 2)).any(dim=1)
 
 
+def objects_out_of_bounds(
+    env: ManagerBasedRLEnv,
+    asset_cfgs: list[SceneEntityCfg] | tuple[SceneEntityCfg, ...] = (SceneEntityCfg("insertive_object"),),
+    velocity_threshold: float = 2.0,
+    xy_distance_threshold: float = 0.5,
+    min_height: float = 0.0,
+) -> torch.Tensor:
+    """Terminate when any specified object exceeds velocity or positional bounds."""
+
+    violation = torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
+
+    for asset_cfg in asset_cfgs:
+        asset = env.scene[asset_cfg.name]
+
+        # Linear velocity magnitude check
+        if hasattr(asset.data, "root_lin_vel_w"):
+            lin_vel = asset.data.root_lin_vel_w
+        elif hasattr(asset.data, "body_lin_vel_w"):
+            lin_vel = asset.data.body_lin_vel_w[:, 0]
+        else:
+            lin_vel = torch.zeros((env.num_envs, 3), device=env.device, dtype=torch.float32)
+
+        violation |= lin_vel.norm(dim=1) > velocity_threshold
+
+        # Position checks
+        pos = asset.data.root_pos_w
+        xy_dist = pos[:, :2].norm(dim=1)
+        violation |= xy_dist > xy_distance_threshold
+        violation |= pos[:, 2] < min_height
+
+    return violation
+
+
 def check_obb_overlap(centroids_a, axes_a, half_extents_a, centroids_b, axes_b, half_extents_b) -> torch.Tensor:
     """
     OBB overlap check.
@@ -190,6 +223,51 @@ class check_grasp_success(ManagerTermBase):
         return grasp_success
 
 
+class gripper_orientation_limit(ManagerTermBase):
+    """Termination condition that triggers when the gripper exceeds a maximum deviation from pointing downward."""
+
+    def __init__(self, cfg: TerminationTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+
+        self._env = env
+        self.robot_cfg: SceneEntityCfg = cfg.params.get("robot_cfg", SceneEntityCfg("robot"))
+        self.ee_body_name: str = cfg.params.get("ee_body_name")
+        if self.ee_body_name is None:
+            raise ValueError("gripper_orientation_limit requires 'ee_body_name' in params")
+
+        self.max_angle_from_down = float(cfg.params.get("max_angle_from_down", np.pi / 3))
+
+        self.robot_asset: Articulation = env.scene[self.robot_cfg.name]
+        self.ee_body_idx = self.robot_asset.data.body_names.index(self.ee_body_name)
+
+        usd_path = self.robot_asset.cfg.spawn.usd_path
+        metadata = utils.read_metadata_from_usd_directory(usd_path)
+        approach_dir = metadata.get("gripper_approach_direction", (0.0, 0.0, -1.0))
+        self._gripper_approach_local = torch.tensor(
+            approach_dir, device=env.device, dtype=torch.float32
+        )
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        robot_cfg: SceneEntityCfg,
+        ee_body_name: str,
+        max_angle_from_down: float | None = None,
+    ) -> torch.Tensor:
+        _ = robot_cfg
+        _ = ee_body_name
+        angle = float(self.max_angle_from_down if max_angle_from_down is None else max_angle_from_down)
+        cos_threshold = np.cos(angle)
+
+        ee_quat = self.robot_asset.data.body_link_quat_w[:, self.ee_body_idx]
+        local_dir = self._gripper_approach_local.unsqueeze(0).expand(env.num_envs, -1)
+        gripper_approach_world = math_utils.quat_apply(ee_quat, local_dir)
+
+        # Trigger termination when the angle from downward exceeds the threshold
+        violation = gripper_approach_world[:, 2] > -cos_threshold
+        return violation
+
+
 class check_reset_state_success(ManagerTermBase):
     """Check if grasp is successful based on object stability, gripper closure, and collision detection."""
 
@@ -210,13 +288,18 @@ class check_reset_state_success(ManagerTermBase):
         self.max_object_pos_deviation = cfg.params.get("max_object_pos_deviation")
         self.pos_z_threshold = cfg.params.get("pos_z_threshold")
         self.consecutive_stability_steps = cfg.params.get("consecutive_stability_steps", 5)
+        self.max_gripper_angle_from_down = float(cfg.params.get("max_gripper_angle_from_down", np.pi / 3))
 
         # Load gripper_approach_direction from metadata
         robot_asset = env.scene[self.robot_cfg.name]
         usd_path = robot_asset.cfg.spawn.usd_path
         metadata = utils.read_metadata_from_usd_directory(usd_path)
         # Always use the physical frame direction for orientation checks
-        self.gripper_approach_direction = tuple(metadata.get("gripper_approach_direction"))
+        approach_dir = metadata.get("gripper_approach_direction", (0.0, 0.0, -1.0))
+        self.gripper_approach_direction = tuple(approach_dir)
+        self._gripper_approach_local = torch.tensor(
+            self.gripper_approach_direction, device=env.device, dtype=torch.float32
+        )
 
         # Initialize stability counter for consecutive stability checking
         self.stability_counter = torch.zeros(env.num_envs, device=env.device, dtype=torch.int32)
@@ -252,6 +335,7 @@ class check_reset_state_success(ManagerTermBase):
         max_object_pos_deviation: float = 0.1,
         pos_z_threshold: float = -0.01,
         consecutive_stability_steps: int = 5,
+        max_gripper_angle_from_down: float = np.pi / 3,
     ) -> torch.Tensor:
 
         # Check time out
@@ -264,13 +348,11 @@ class check_reset_state_success(ManagerTermBase):
 
         # Check if gripper orientation is pointing downward within 60 degrees of vertical
         ee_quat = self.robot_asset.data.body_link_quat_w[:, self.ee_body_idx]
-        gripper_approach_local = torch.tensor(
-            self.gripper_approach_direction, device=env.device, dtype=torch.float32
-        ).expand(env.num_envs, -1)
+        gripper_approach_local = self._gripper_approach_local.unsqueeze(0).expand(env.num_envs, -1)
         gripper_approach_world = math_utils.quat_apply(ee_quat, gripper_approach_local)
-        gripper_orientation_within_range = (
-            gripper_approach_world[:, 2] < -0.5
-        )  # cos(60°) = 0.5, so z < -0.5 for 60° cone
+        angle = float(max_gripper_angle_from_down if max_gripper_angle_from_down is not None else self.max_gripper_angle_from_down)
+        cos_threshold = np.cos(angle)
+        gripper_orientation_within_range = gripper_approach_world[:, 2] <= -cos_threshold
 
         # Check if asset velocities are small
         current_step_stable = torch.ones(env.num_envs, device=env.device, dtype=torch.bool)

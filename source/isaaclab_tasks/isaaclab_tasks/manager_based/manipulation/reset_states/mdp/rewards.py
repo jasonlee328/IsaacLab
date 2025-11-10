@@ -34,6 +34,7 @@ class ee_asset_distance_tanh(ManagerTermBase):
         self.root_asset_cfg = cfg.params.get("root_asset_cfg")
         self.target_asset_cfg = cfg.params.get("target_asset_cfg")
         self.std = cfg.params.get("std")
+        self.enable_debug_vis = cfg.params.get("enable_debug_vis", False)
 
         root_asset_offset_metadata_key: str = cfg.params.get("root_asset_offset_metadata_key")
         target_asset_offset_metadata_key: str = cfg.params.get("target_asset_offset_metadata_key")
@@ -53,6 +54,34 @@ class ee_asset_distance_tanh(ManagerTermBase):
         else:
             self.target_asset_offset = None
 
+        # Initialize debug visualization markers if enabled
+        if self.enable_debug_vis:
+            from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+            from isaaclab.markers.config import GREEN_ARROW_X_MARKER_CFG, RED_ARROW_X_MARKER_CFG
+            
+            # Goal pose visualizer (green) - shows where end effector should be
+            # Note: This will show the target asset position (what the reward is trying to minimize distance to)
+            goal_cfg = VisualizationMarkersCfg(
+                prim_path="/Visuals/Rewards/ee_asset_distance/goal_pose",
+                markers=GREEN_ARROW_X_MARKER_CFG.markers
+            )
+            goal_cfg.markers["arrow"].scale = (0.05, 0.05, 0.15)
+            self.goal_pose_visualizer = VisualizationMarkers(goal_cfg)
+            
+            # End effector pose visualizer (red) - shows current end effector pose
+            ee_cfg = VisualizationMarkersCfg(
+                prim_path="/Visuals/Rewards/ee_asset_distance/end_effector_pose",
+                markers=RED_ARROW_X_MARKER_CFG.markers
+            )
+            ee_cfg.markers["arrow"].scale = (0.05, 0.05, 0.15)
+            self.ee_pose_visualizer = VisualizationMarkers(ee_cfg)
+            
+            self.goal_pose_visualizer.set_visibility(True)
+            self.ee_pose_visualizer.set_visibility(True)
+        else:
+            self.goal_pose_visualizer = None
+            self.ee_pose_visualizer = None
+
     def __call__(
         self,
         env: ManagerBasedRLEnv,
@@ -61,11 +90,15 @@ class ee_asset_distance_tanh(ManagerTermBase):
         root_asset_offset_metadata_key: str,
         target_asset_offset_metadata_key: str | None = None,
         std: float = 0.1,
+        enable_debug_vis: bool = False,  # Optional parameter for initialization (not used in call)
     ) -> torch.Tensor:
+        # Compute end effector pose with offset (exactly as used in reward computation)
         root_asset_alignment_pos_w, root_asset_alignment_quat_w = self.root_asset_offset.combine(
             self.root_asset.data.body_link_pos_w[:, root_asset_cfg.body_ids].view(-1, 3),
             self.root_asset.data.body_link_quat_w[:, root_asset_cfg.body_ids].view(-1, 4),
         )
+        
+        # Compute target asset pose (with offset if specified)
         if self.target_asset_offset is None:
             target_asset_alignment_pos_w = self.target_asset.data.root_pos_w.view(-1, 3)
             target_asset_alignment_quat_w = self.target_asset.data.root_quat_w.view(-1, 4)
@@ -73,6 +106,22 @@ class ee_asset_distance_tanh(ManagerTermBase):
             target_asset_alignment_pos_w, target_asset_alignment_quat_w = self.target_asset_offset.apply(
                 self.target_asset
             )
+        
+        # Update debug visualization if enabled
+        if self.enable_debug_vis and self.goal_pose_visualizer is not None and self.ee_pose_visualizer is not None:
+            # Visualize insertive object pose (green) - this is what the reward is trying to minimize distance to
+            # This shows the insertive object's root pose (no offset applied since target_asset_offset_metadata_key is None)
+            self.goal_pose_visualizer.visualize(
+                translations=target_asset_alignment_pos_w,
+                orientations=target_asset_alignment_quat_w,
+            )
+            # Visualize end effector pose with gripper_offset (red) - current end effector TCP pose
+            # This is the actual pose used in the reward computation
+            self.ee_pose_visualizer.visualize(
+                translations=root_asset_alignment_pos_w,
+                orientations=root_asset_alignment_quat_w,
+            )
+        
         target_asset_in_root_asset_frame_pos, target_asset_in_root_asset_frame_angle_axis = (
             math_utils.compute_pose_error(
                 root_asset_alignment_pos_w,

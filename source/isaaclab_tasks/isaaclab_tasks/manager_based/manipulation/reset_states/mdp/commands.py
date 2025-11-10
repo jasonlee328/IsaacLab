@@ -509,13 +509,15 @@ class ReceptiveObjectGoalCommand(TaskDependentCommand):
     def _debug_vis_callback(self, event):
         """Update visualization when debug is enabled."""
         if hasattr(self, "goal_pose_visualizer") and hasattr(self, "insertive_object_visualizer"):
-            # Visualize goal poses (green arrows)
+            # Visualize goal poses (green arrows) - where insertive object SHOULD be
+            # These are computed from receptive object root pose + height offset
             self.goal_pose_visualizer.visualize(
                 translations=self.goal_positions,
                 orientations=self.goal_orientations,
             )
             
-            # Visualize insertive object poses (blue arrows) - directly without offsets
+            # Visualize insertive object poses (blue arrows) - where insertive object ACTUALLY is
+            # Using root pose directly (no offset) to match what's used in goal computation
             insertive_asset_pos_w = self.insertive_asset.data.root_pos_w
             insertive_asset_quat_w = self.insertive_asset.data.root_quat_w
             self.insertive_object_visualizer.visualize(

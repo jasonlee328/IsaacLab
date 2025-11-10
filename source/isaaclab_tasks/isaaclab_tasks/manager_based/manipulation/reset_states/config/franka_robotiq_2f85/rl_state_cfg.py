@@ -73,15 +73,7 @@ class RlStateSceneCfg(InteractiveSceneCfg):
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
 
-    # Environment
-    table = RigidObjectCfg(
-        prim_path="{ENV_REGEX_NS}/Table",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.4, 0.0, -0.881), rot=(0.707, 0.0, 0.0, -0.707)),
-        spawn=sim_utils.UsdFileCfg(
-            usd_path=f"{OCTILAB_CLOUD_ASSETS_DIR}/Props/Mounts/UWPatVention/pat_vention.usd",
-            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
-        ),
-    )
+
 
     table = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Table",
@@ -112,8 +104,8 @@ class BaseEventCfg:
         func=task_mdp.randomize_rigid_body_material,  # type: ignore
         mode="startup",
         params={
-            "static_friction_range": (0.3, 1.2),
-            "dynamic_friction_range": (0.2, 1.0),
+            "static_friction_range": (1.2, 1.2),
+            "dynamic_friction_range": (1.0, 1.0),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 1,
             "asset_cfg": SceneEntityCfg("robot"),
@@ -126,8 +118,8 @@ class BaseEventCfg:
         func=task_mdp.randomize_rigid_body_material,  # type: ignore
         mode="startup",
         params={
-            "static_friction_range": (1.0, 2.0),
-            "dynamic_friction_range": (0.9, 1.9),
+            "static_friction_range": (2.0, 2.0),
+            "dynamic_friction_range": (1.9, 1.9),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 1,
             "asset_cfg": SceneEntityCfg("insertive_object"),
@@ -140,8 +132,8 @@ class BaseEventCfg:
         func=task_mdp.randomize_rigid_body_material,  # type: ignore
         mode="startup",
         params={
-            "static_friction_range": (1.0, 2.0),
-            "dynamic_friction_range": (0.9, 1.9),
+            "static_friction_range": (2.0, 2.0),
+            "dynamic_friction_range": (1.9, 1.9),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 1,
             "asset_cfg": SceneEntityCfg("receptive_object"),
@@ -256,7 +248,7 @@ class TrainEventCfg(BaseEventCfg):
             "base_paths": [
                 str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAnywhere"),
                 # str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAround"),
-                str(get_octilab_reset_state_datasets_path() / "ObjectRestingEEGrasped"),
+                str(get_octilab_reset_state_datasets_path() / "ObjectRestingEEAroundInsertive"),
                 str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEGrasped"),
                 str(get_octilab_reset_state_datasets_path() / "ObjectNearReceptiveEEGrasped"),
                 # f"{OCTILAB_CLOUD_ASSETS_DIR}/Datasets/Resets/Assemblies/ObjectPartiallyAssembledEEGrasped",
@@ -508,10 +500,13 @@ class RewardsCfg:
         func=task_mdp.ee_asset_distance_tanh,
         weight=0.1,
         params={
+            # Use robotiq_arg2f_base_link to match observations and reset states exactly
+            # gripper_offset is now correctly defined in metadata for robotiq_arg2f_base_link frame
             "root_asset_cfg": SceneEntityCfg("robot", body_names="robotiq_arg2f_base_link"),
             "target_asset_cfg": SceneEntityCfg("insertive_object"),
             "root_asset_offset_metadata_key": "gripper_offset",
             "std": 1.0,
+            "enable_debug_vis": True,  # Enable visualization: green=insertive object, red=end effector TCP
         },
     )
 
@@ -527,6 +522,16 @@ class TerminationsCfg:
     time_out = DoneTerm(func=task_mdp.time_out, time_out=True)
 
     abnormal_robot = DoneTerm(func=task_mdp.abnormal_robot_state)
+
+    # object_safety = DoneTerm(
+    #     func=task_mdp.objects_out_of_bounds,
+    #     params={
+    #         "asset_cfgs": [SceneEntityCfg("insertive_object"), SceneEntityCfg("receptive_object")],
+    #         "velocity_threshold": 2.0,
+    #         "xy_distance_threshold": 0.5,
+    #         "min_height": 0.0,
+    #     },
+    # )
 
 
     #TODO: add termination for objects  falling off the table

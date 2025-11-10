@@ -478,11 +478,11 @@ FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.actuators = {
         },
     ), 
     # Robotiq gripper actuators (pre-assembled USD uses outer_knuckle_joints)
-    # Settings match grasp sampling wrapper to ensure consistent behavior
+    # Settings match UR5e/grasp sampling wrapper to ensure consistent behavior
     "gripper": ImplicitActuatorCfg(
         joint_names_expr=[".*_outer_knuckle_joint"],  # Main actuated joints
         effort_limit_sim=165.0,  # Match UR5e/grasp sampling (was 200.0)
-        velocity_limit_sim=0.2,
+        # velocity_limit_sim not specified - matches UR5e (uses USD default, allowing faster closing)
         stiffness=17.0,  # Match UR5e/grasp sampling (was 2000, too high causing slipping)
         damping=5.0,  # Match UR5e/grasp sampling (was 100)
     ),

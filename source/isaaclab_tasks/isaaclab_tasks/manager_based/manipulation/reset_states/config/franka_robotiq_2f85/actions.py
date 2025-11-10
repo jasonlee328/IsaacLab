@@ -22,11 +22,14 @@ from ...mdp.actions.actions_cfg import PreprocessedOperationalSpaceControllerAct
 FRANKA_ROBOTIQ_2F85_RELATIVE_OSC = PreprocessedOperationalSpaceControllerActionCfg(
     asset_name="robot",
     joint_names=["panda_joint.*"],
-    body_name="panda_link7",
+    # Use robotiq_arg2f_base_link to match UR5e pattern and align with observations/rewards
+    # This ensures OSC controls the same frame that observations/rewards reference (with gripper_offset applied for TCP)
+    body_name="robotiq_arg2f_base_link",
     body_offset=PreprocessedOperationalSpaceControllerActionCfg.OffsetCfg(
-        pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)
+        pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)  # No offset: control gripper base link directly (matches UR5e pattern)
     ),
     action_root_offset=PreprocessedOperationalSpaceControllerActionCfg.OffsetCfg(
+        # Robot base coordinate frame transformation (not end-effector frame)
         pos=read_metadata_from_usd_directory(FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.spawn.usd_path).get("offset", {}).get("pos", [0.0, 0.0, 0.0]),
         rot=read_metadata_from_usd_directory(FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.spawn.usd_path).get("offset", {}).get("quat", [1.0, 0.0, 0.0, 0.0]),
     ),
