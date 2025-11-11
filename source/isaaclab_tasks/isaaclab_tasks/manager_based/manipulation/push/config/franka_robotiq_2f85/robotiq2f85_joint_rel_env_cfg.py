@@ -174,29 +174,27 @@ class CustomEventCfg:
 class CommandsCfg:
     """Command terms for the MDP.
     
-    Note: The threshold parameter controls all related distances and visualizations.
-    - min_distance = threshold + 0.01
-    - goal_pose_visualizer radius = threshold
-    - curr_pose_visualizer radius = 0.0 (always)
+    Uses 2D polar sampling for target generation:
+    - min_radius: Minimum distance from cube to target
+    - max_radius: Maximum distance from cube to target  
+    - Samples uniformly in radius and angle (full 360°)
     """
 
-    # Target position for the cube to reach (relative offsets from cube position)
-    ee_pose = dex_cmd.ObjectRelativePoseCommandCfg(
+    # Target position for the cube to reach (using polar sampling)
+    ee_pose = push_commands.ObjectRelativePoseCommandCfg(
         asset_name="robot",  # Reference frame (robot base)
         object_name="cube",  # The object to generate commands for
         resampling_time_range=(10e9, 10e9),  # Never resample during episode
         debug_vis=True,  # Enable visualization of target and current positions
         position_only=True,  # Only generate position commands (no orientation)
         make_quat_unique=False,
-        min_distance=0.02,  # Will be updated in __post_init__ to threshold + 0.01
-        ranges=dex_cmd.ObjectRelativePoseCommandCfg.Ranges(
-            # These are OFFSETS from cube's current position (not absolute positions!)
-            pos_x=(-0.10, 0.10),  # Target 15-35cm forward from cube
-            pos_y=(-0.10, 0.10),   # Target ±20cm lateral from cube
-            pos_z=(0.0, 0.0),    # Same height as cube (no vertical offset)
-            roll=(0, 0),
-            pitch=(0, 0),
-            yaw=(0.0, 0),
+        min_radius=0.05,  # Minimum push distance (e.g., cube radius)
+        max_radius=0.30,  # Maximum push distance
+        ranges=push_commands.ObjectRelativePoseCommandCfg.Ranges(
+            # Orientation ranges (not used since position_only=True)
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
         )
     )
 
@@ -509,11 +507,52 @@ class ReorientObservationsCfg:
 
 @configclass
 class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainCfg):
-    """Configuration for reorientation task with Franka + Robotiq gripper."""
+    """Configuration for reorientation task with Franka + Robotiq gripper with distractors."""
     
     def __post_init__(self):
 
         super().__post_init__()
+
+        # Add distractor cubes to the scene
+        self.scene.distractor_1 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Distractor1",
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=[0.5, 0.1, 0.0203],  # Will be positioned by event
+                rot=[1, 0, 0, 0]
+            ),
+            spawn=UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",  # Red for distractors
+                scale=(1.0, 1.0, 1.0),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            ),
+        )
+        
+        self.scene.distractor_2 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Distractor2",
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=[0.5, -0.1, 0.0203],  # Will be positioned by event
+                rot=[1, 0, 0, 0]
+            ),
+            spawn=UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",  # Red for distractors
+                scale=(1.0, 1.0, 1.0),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            ),
+        )
 
         threshold = 0.01  
         orientation_threshold = 0.0173  
@@ -526,12 +565,26 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
         
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
         self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
+        
+        # Add event to position distractors adjacent to target (after command is generated)
+        self.events.position_distractors = EventTerm(
+            func=push_mdp.position_distractors_adjacent_to_target,
+            mode="reset",
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+                "distractor_2_cfg": SceneEntityCfg("distractor_2"),
+                "command_name": "ee_pose",
+                "distractor_distance": 0.0468,  # Half cube size (2.34cm)
+            },
+        )
+        
         self.commands.ee_pose.ranges.pos_x = target_x_range
         self.commands.ee_pose.ranges.pos_y = target_y_range
         self.commands.ee_pose.ranges.yaw = yaw_range
         self.commands.ee_pose.position_only = False  
         self.commands.ee_pose.success_threshold = threshold
-        self.commands.ee_pose.min_distance = 0.0
+        self.commands.ee_pose.min_radius = 0.15
+        self.commands.ee_pose.max_radius = 0.20  # Small range for reorientation
         self.rewards.reaching_goal = None  
         self.rewards.distance_orientation_goal = RwdTerm(
             func=push_mdp.distance_orientation_goal,
@@ -591,7 +644,51 @@ class PushObservationsCfg:
     
     # observation groups
     policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class PushDistractorObservationsCfg:
+    """Observations for push task with distractors."""
     
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for policy group - includes distractor positions."""
+        
+        # Robot observations
+        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        
+        # End-effector observations
+        ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
+        ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
+        
+        # Target cube observations
+        cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
+        target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
+        
+        # Cube position relative to goal
+        cube_pos_goal = ObsTerm(
+            func=push_observations.cube_in_target_frame,
+            params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
+        )
+        
+        # Distractor observations
+        distractor_positions = ObsTerm(
+            func=push_observations.distractor_positions_rel,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+                "distractor_2_cfg": SceneEntityCfg("distractor_2")
+            }
+        )
+        
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+    
+    # observation groups
+    policy: PolicyCfg = PolicyCfg()
+
+
 @configclass
 class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainCfg):
     """Configuration for push task with Franka + Robotiq gripper."""
@@ -609,10 +706,11 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
         self.observations = PushObservationsCfg()
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
         self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
-        self.commands.ee_pose.ranges.pos_x = target_x_range
-        self.commands.ee_pose.ranges.pos_y = target_y_range
+        # Note: ranges.pos_x and pos_y are not used with polar sampling
+        # Instead, use min_radius and max_radius
         self.commands.ee_pose.success_threshold = threshold
-        self.commands.ee_pose.min_distance = 0.10
+        self.commands.ee_pose.min_radius = 0.10  # Minimum push distance
+        self.commands.ee_pose.max_radius = 0.30  # Maximum push distance
         self.rewards.reaching_goal = None  # Remove position-only reward
         self.rewards.reaching_goal = RwdTerm(
             func=push_mdp.object_reached_goal,
@@ -723,63 +821,13 @@ class FrankaRobotiq2f85CustomOmniPushDistractorEnvCfg(FrankaRobotiq2f85CustomOmn
         target_y_range = (-0.15, 0.15)  # Target position range (relative to cube)
         
         # Update the existing command configuration
-        self.commands.ee_pose.ranges.pos_x = target_x_range
-        self.commands.ee_pose.ranges.pos_y = target_y_range
+        # Note: ranges.pos_x and pos_y are not used with polar sampling
+        # Instead, use min_radius and max_radius
         self.commands.ee_pose.success_threshold = threshold
-        self.commands.ee_pose.min_distance = 0.15
+        self.commands.ee_pose.min_radius = 0.15  # Minimum push distance (avoid distractor overlap)
+        self.commands.ee_pose.max_radius = 0.30  # Maximum push distance
         
-        # Create custom observations that include distractors
-        @configclass
-        class PushDistractorObservationsCfg:
-            """Observations for push task with distractors."""
-            
-            @configclass
-            class PolicyCfg(ObsGroup):
-                """Observations for policy group - includes distractor positions."""
-                
-                # Robot observations
-                joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
-                joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
-                
-                # End-effector observations
-                ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
-                ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
-                
-                # Target cube observations
-                cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
-                target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
-                
-                # Cube position relative to goal
-                cube_pos_goal = ObsTerm(
-                    func=push_observations.cube_in_target_frame,
-                    params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
-                )
-                
-                # Distractor observations
-                distractor_positions = ObsTerm(
-                    func=push_observations.distractor_positions_rel,
-                    params={
-                        "distractor_1_cfg": SceneEntityCfg("distractor_1"),
-                        "distractor_2_cfg": SceneEntityCfg("distractor_2")
-                    }
-                )
-                
-                # distractor_orientations = ObsTerm(
-                #     func=push_observations.distractor_quats_rel,
-                #     params={
-                #         "distractor_1_cfg": SceneEntityCfg("distractor_1"),
-                #         "distractor_2_cfg": SceneEntityCfg("distractor_2")
-                #     }
-                # )
-                
-                def __post_init__(self):
-                    self.enable_corruption = False
-                    self.concatenate_terms = True
-            
-            # observation groups
-            policy: PolicyCfg = PolicyCfg()
-        
-        # Set the custom observations
+        # Set the custom observations with distractors
         self.observations = PushDistractorObservationsCfg()
         
         # Set rewards

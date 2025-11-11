@@ -373,6 +373,99 @@ def store_distractor_initial_positions(
     env._distractor_initial_pos['distractor_2'][env_ids] = distractor_2.data.root_pos_w[env_ids, :3].clone()
 
 
+def position_distractors_adjacent_to_target(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    distractor_1_cfg: SceneEntityCfg,
+    distractor_2_cfg: SceneEntityCfg,
+    command_name: str = "ee_pose",
+    distractor_distance: float = 0.0234,
+):
+    """Position distractor blocks adjacent to the command target position.
+    
+    Places two distractor cubes exactly `distractor_distance` away from the target position.
+    The distractors are placed at opposite sides (180° apart) with the same orientation as target.
+    
+    Args:
+        env: The environment instance.
+        env_ids: Environment indices to update.
+        distractor_1_cfg: Configuration for the first distractor cube.
+        distractor_2_cfg: Configuration for the second distractor cube.
+        command_name: Name of the command containing target pose.
+        distractor_distance: Distance from target center to distractor center (in meters).
+                            Default 0.0234m is half cube size (2.34cm).
+    """
+    if env_ids is None or len(env_ids) == 0:
+        return
+    
+    from isaaclab.utils.math import combine_frame_transforms
+    
+    # Get the command term and robot
+    command_term = env.command_manager._terms[command_name]
+    robot = command_term.robot
+    
+    # Manually trigger command resample for these environments if needed
+    # This ensures we have fresh commands before positioning distractors
+    command_term._resample(env_ids)
+    
+    # Get target position and orientation in base frame
+    target_pos_b = command_term.pose_command_b[env_ids, :3]  # (N, 3)
+    target_quat_b = command_term.pose_command_b[env_ids, 3:]  # (N, 4)
+    
+    # Transform from base frame to world frame
+    target_pos_w, target_quat_w = combine_frame_transforms(
+        robot.data.root_pos_w[env_ids],
+        robot.data.root_quat_w[env_ids],
+        target_pos_b,
+        target_quat_b,
+    )
+    
+    # Debug: Print positions to verify sync
+    if len(env_ids) > 0 and env_ids[0].item() == 0:
+        print(f"[DEBUG] Distractor positioning for env 0:")
+        print(f"  Target pos (world): {target_pos_w[0].cpu().numpy()}")
+        print(f"  Distractor 1 will be at: {target_pos_w[0, :2].cpu().numpy()} + offset")
+        print(f"  Distance from target: {distractor_distance}m")
+    
+    # Sample random angles for distractor placement around the target
+    # Place them at opposite sides (180° apart) to avoid overlap
+    num_envs = len(env_ids)
+    distractor_angle_1 = torch.empty(num_envs, device=env.device)
+    distractor_angle_1.uniform_(0, 2 * torch.pi)
+    distractor_angle_2 = distractor_angle_1 + torch.pi  # 180° opposite
+    
+    # Compute distractor 1 position: target + offset at distractor_distance
+    distractor_1_offset_x = distractor_distance * torch.cos(distractor_angle_1)
+    distractor_1_offset_y = distractor_distance * torch.sin(distractor_angle_1)
+    distractor_1_pos_w = target_pos_w.clone()
+    distractor_1_pos_w[:, 0] += distractor_1_offset_x
+    distractor_1_pos_w[:, 1] += distractor_1_offset_y
+    # Keep same Z (height)
+    
+    # Compute distractor 2 position: target + offset at 180° from distractor 1
+    distractor_2_offset_x = distractor_distance * torch.cos(distractor_angle_2)
+    distractor_2_offset_y = distractor_distance * torch.sin(distractor_angle_2)
+    distractor_2_pos_w = target_pos_w.clone()
+    distractor_2_pos_w[:, 0] += distractor_2_offset_x
+    distractor_2_pos_w[:, 1] += distractor_2_offset_y
+    # Keep same Z (height)
+    
+    # Get distractor objects
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+    
+    # Create pose tensors: [x, y, z, qw, qx, qy, qz]
+    distractor_1_pose = torch.cat([distractor_1_pos_w, target_quat_w], dim=-1)
+    distractor_2_pose = torch.cat([distractor_2_pos_w, target_quat_w], dim=-1)
+    
+    # Write to simulation
+    distractor_1.write_root_pose_to_sim(distractor_1_pose, env_ids=env_ids)
+    distractor_1.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+    
+    distractor_2.write_root_pose_to_sim(distractor_2_pose, env_ids=env_ids)
+    distractor_2.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+
+
 def randomize_all_cubes_with_command_separation(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
