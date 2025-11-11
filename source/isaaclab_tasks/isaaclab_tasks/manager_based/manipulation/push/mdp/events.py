@@ -322,16 +322,6 @@ def position_ee_near_cube_ik(
     robot.set_joint_position_target(joint_pos, env_ids=env_ids)
     robot.set_joint_velocity_target(joint_vel, env_ids=env_ids)
     
-    if debug and len(env_ids) > 0:
-        # Check final EE position after IK
-        final_ee_pos = ee_frame.data.target_pos_w[env_ids, 0, :]
-        final_distance = torch.norm(final_ee_pos[first_idx] - target_ee_pos_w[first_idx]).item()
-        print(f"\n  After IK ({ik_iterations} iterations):")
-        print(f"    Final EE position: {final_ee_pos[first_idx].cpu().numpy()}")
-        print(f"    Target EE position: {target_ee_pos_w[first_idx].cpu().numpy()}")
-        print(f"    Final error: {final_distance:.6f}m ({final_distance*1000:.2f}mm)")
-        print(f"    Joint positions: {joint_pos[first_idx, :7].cpu().numpy()}")
-        print("="*80 + "\n")
 
 
 def store_distractor_initial_positions(
@@ -377,7 +367,7 @@ def position_distractors_adjacent_to_target(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
     distractor_1_cfg: SceneEntityCfg,
-    distractor_2_cfg: SceneEntityCfg,
+    distractor_2_cfg: SceneEntityCfg | None,
     command_name: str = "ee_pose",
     distractor_distance: float = 0.0234,
 ):
@@ -404,11 +394,8 @@ def position_distractors_adjacent_to_target(
     command_term = env.command_manager._terms[command_name]
     robot = command_term.robot
     
-    # Manually trigger command resample for these environments if needed
-    # This ensures we have fresh commands before positioning distractors
-    command_term._resample(env_ids)
-    
-    # Get target position and orientation in base frame
+    # Get target position and orientation from the current command
+    # NOTE: This function should be called AFTER command_manager.reset() to use fresh commands
     target_pos_b = command_term.pose_command_b[env_ids, :3]  # (N, 3)
     target_quat_b = command_term.pose_command_b[env_ids, 3:]  # (N, 4)
     
@@ -420,19 +407,13 @@ def position_distractors_adjacent_to_target(
         target_quat_b,
     )
     
-    # Debug: Print positions to verify sync
-    if len(env_ids) > 0 and env_ids[0].item() == 0:
-        print(f"[DEBUG] Distractor positioning for env 0:")
-        print(f"  Target pos (world): {target_pos_w[0].cpu().numpy()}")
-        print(f"  Distractor 1 will be at: {target_pos_w[0, :2].cpu().numpy()} + offset")
-        print(f"  Distance from target: {distractor_distance}m")
-    
     # Sample random angles for distractor placement around the target
     # Place them at opposite sides (180° apart) to avoid overlap
     num_envs = len(env_ids)
     distractor_angle_1 = torch.empty(num_envs, device=env.device)
     distractor_angle_1.uniform_(0, 2 * torch.pi)
-    distractor_angle_2 = distractor_angle_1 + torch.pi  # 180° opposite
+    if distractor_2_cfg is not None:
+        distractor_angle_2 = distractor_angle_1 + torch.pi  # 180° opposite
     
     # Compute distractor 1 position: target + offset at distractor_distance
     distractor_1_offset_x = distractor_distance * torch.cos(distractor_angle_1)
@@ -442,28 +423,44 @@ def position_distractors_adjacent_to_target(
     distractor_1_pos_w[:, 1] += distractor_1_offset_y
     # Keep same Z (height)
     
-    # Compute distractor 2 position: target + offset at 180° from distractor 1
-    distractor_2_offset_x = distractor_distance * torch.cos(distractor_angle_2)
-    distractor_2_offset_y = distractor_distance * torch.sin(distractor_angle_2)
-    distractor_2_pos_w = target_pos_w.clone()
-    distractor_2_pos_w[:, 0] += distractor_2_offset_x
-    distractor_2_pos_w[:, 1] += distractor_2_offset_y
+    if distractor_2_cfg is not None:
+        # Compute distractor 2 position: target + offset at 180° from distractor 1
+        distractor_2_offset_x = distractor_distance * torch.cos(distractor_angle_2)
+        distractor_2_offset_y = distractor_distance * torch.sin(distractor_angle_2)
+        distractor_2_pos_w = target_pos_w.clone()
+        distractor_2_pos_w[:, 0] += distractor_2_offset_x
+        distractor_2_pos_w[:, 1] += distractor_2_offset_y
     # Keep same Z (height)
+    
+
     
     # Get distractor objects
     distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
-    distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+    if distractor_2_cfg is not None:
+        distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+    
     
     # Create pose tensors: [x, y, z, qw, qx, qy, qz]
     distractor_1_pose = torch.cat([distractor_1_pos_w, target_quat_w], dim=-1)
-    distractor_2_pose = torch.cat([distractor_2_pos_w, target_quat_w], dim=-1)
+    
     
     # Write to simulation
     distractor_1.write_root_pose_to_sim(distractor_1_pose, env_ids=env_ids)
     distractor_1.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+    if distractor_2_cfg is not None:
+        distractor_2_pose = torch.cat([distractor_2_pos_w, target_quat_w], dim=-1)
+        distractor_2.write_root_pose_to_sim(distractor_2_pose, env_ids=env_ids)
+        distractor_2.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
     
-    distractor_2.write_root_pose_to_sim(distractor_2_pose, env_ids=env_ids)
-    distractor_2.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+    # Debug: Verify positions were actually written
+    # if len(env_ids) > 0 and env_ids[0].item() == 0:
+    #     print(f"\n[DEBUG] AFTER write_root_pose_to_sim:")
+    #     print(f"Distractor 1 data.root_pos_w: {distractor_1.data.root_pos_w[env_ids[0]].cpu().numpy()}")
+    #     print(f"Distractor 2 data.root_pos_w: {distractor_2.data.root_pos_w[env_ids[0]].cpu().numpy()}")
+    #     print(f"Expected D1 pos: {distractor_1_pos_w[0].cpu().numpy()}")
+    #     print(f"Expected D2 pos: {distractor_2_pos_w[0].cpu().numpy()}")
+    #     print(f"Position match D1: {torch.allclose(distractor_1.data.root_pos_w[env_ids[0]], distractor_1_pos_w[0], atol=1e-4)}")
+    #     print(f"Position match D2: {torch.allclose(distractor_2.data.root_pos_w[env_ids[0]], distractor_2_pos_w[0], atol=1e-4)}\n")
 
 
 def randomize_all_cubes_with_command_separation(

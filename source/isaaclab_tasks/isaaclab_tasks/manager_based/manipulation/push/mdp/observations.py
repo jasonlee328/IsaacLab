@@ -368,8 +368,7 @@ def cube_velocity_w(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEnt
 
 
 def distractor_positions_rel(env: ManagerBasedRLEnv, 
-                            distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1"),
-                            distractor_2_cfg: SceneEntityCfg = SceneEntityCfg("distractor_2")) -> torch.Tensor:
+                            distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1")) -> torch.Tensor:
     """Distractor cube positions relative to robot base.
     
     Returns concatenated positions of both distractor cubes in robot base frame.
@@ -379,18 +378,18 @@ def distractor_positions_rel(env: ManagerBasedRLEnv,
     
     # Extract distractors
     distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
-    distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+    # distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
     
     # Get positions in world frame
     dist1_pos_w = distractor_1.data.root_pos_w[:, :3]
-    dist2_pos_w = distractor_2.data.root_pos_w[:, :3]
+    # dist2_pos_w = distractor_2.data.root_pos_w[:, :3]
     
     # Convert to environment-relative coordinates
     dist1_pos = dist1_pos_w - env.scene.env_origins
-    dist2_pos = dist2_pos_w - env.scene.env_origins
+    # dist2_pos = dist2_pos_w - env.scene.env_origins
     
     # Concatenate positions
-    return torch.cat([dist1_pos, dist2_pos], dim=-1)
+    return dist1_pos
 
 
 def distractor_quats_rel(env: ManagerBasedRLEnv,

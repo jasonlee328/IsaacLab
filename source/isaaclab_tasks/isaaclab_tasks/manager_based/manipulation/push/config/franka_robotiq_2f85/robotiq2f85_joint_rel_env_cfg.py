@@ -35,7 +35,6 @@ from isaaclab_tasks.manager_based.manipulation.dexsuite.mdp import commands as d
 from isaaclab.markers.config import FRAME_MARKER_CFG  # isort: skip
 from isaaclab_assets.robots.franka import (
     FRANKA_ROBOTIQ_GRIPPER_CFG,
-    FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG,
     FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_CFG,
     FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG
 )  # isort: skip
@@ -359,50 +358,50 @@ class FrankaRobotiq2f85RelTrainCfg(FrankaRobotiq2f85RLStateCfg):
         # )
         
 
-@configclass
-class FrankaRobotiq2f85CustomRelTrainCfg(FrankaRobotiq2f85RLStateCfg):
-    """Configuration for Franka cube pushing task using custom pre-assembled Robotiq gripper USD."""
+# @configclass
+# class FrankaRobotiq2f85CustomRelTrainCfg(FrankaRobotiq2f85RLStateCfg):
+#     """Configuration for Franka cube pushing task using custom pre-assembled Robotiq gripper USD."""
     
-    def __post_init__(self):
+#     def __post_init__(self):
 
-        super().__post_init__()
-        # Use custom configurations for pre-assembled USD
-        self.events = CustomEventCfg()  # 9-joint structure
-        self.actions = FrankaRobotiq2f85CustomRelativeAction()  # outer_knuckle_joint actions
-        self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-        self.scene.robot.spawn.semantic_tags = [("class", "robot")]
-        # Override the default position from FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG
-        self.scene.robot.init_state.pos = (0.0, 0.0, 0.0)  # Reset to origin (table is at 0.5, 0, 0)
-        # Ensure the robot is visible
-        self.scene.robot.spawn.activate_contact_sensors = False
-        self.scene.robot.init_state.joint_pos = {
-            "panda_joint1": 0.0444,      # base rotation
-            "panda_joint2": -0.1894,     # shoulder forward
-            "panda_joint3": -0.1107,      # elbow rotation
-            "panda_joint4": -2.5148,     # elbow bend
-            "panda_joint5": 0.0044,      # wrist rotation
-            "panda_joint6": 2.3775,      # wrist bend
-            "panda_joint7": 0.6952,      # flange rotation (45 degrees)
-            # Robotiq gripper joints (custom pre-assembled USD structure from GitHub #1299)
-            ".*_outer_knuckle_joint": 0.0,   # Main actuated joints - OPEN position
-            ".*_inner_finger_joint": 0.0,    # Passive joints
-        }
+#         super().__post_init__()
+#         # Use custom configurations for pre-assembled USD
+#         self.events = CustomEventCfg()  # 9-joint structure
+#         self.actions = FrankaRobotiq2f85CustomRelativeAction()  # outer_knuckle_joint actions
+#         self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+#         self.scene.robot.spawn.semantic_tags = [("class", "robot")]
+#         # Override the default position from FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG
+#         self.scene.robot.init_state.pos = (0.0, 0.0, 0.0)  # Reset to origin (table is at 0.5, 0, 0)
+#         # Ensure the robot is visible
+#         self.scene.robot.spawn.activate_contact_sensors = False
+#         self.scene.robot.init_state.joint_pos = {
+#             "panda_joint1": 0.0444,      # base rotation
+#             "panda_joint2": -0.1894,     # shoulder forward
+#             "panda_joint3": -0.1107,      # elbow rotation
+#             "panda_joint4": -2.5148,     # elbow bend
+#             "panda_joint5": 0.0044,      # wrist rotation
+#             "panda_joint6": 2.3775,      # wrist bend
+#             "panda_joint7": 0.6952,      # flange rotation (45 degrees)
+#             # Robotiq gripper joints (custom pre-assembled USD structure from GitHub #1299)
+#             ".*_outer_knuckle_joint": 0.0,   # Main actuated joints - OPEN position
+#             ".*_inner_finger_joint": 0.0,    # Passive joints
+#         }
         
-        # Robotiq gripper configuration (custom USD uses outer_knuckle_joints)
-        self.gripper_joint_names = ["left_outer_knuckle_joint", "right_outer_knuckle_joint"]
-        self.gripper_open_val = 0.0  # Robotiq opens at 0.0
-        self.gripper_threshold = 0.1  # Threshold for gripper state
+#         # Robotiq gripper configuration (custom USD uses outer_knuckle_joints)
+#         self.gripper_joint_names = ["left_outer_knuckle_joint", "right_outer_knuckle_joint"]
+#         self.gripper_open_val = 0.0  # Robotiq opens at 0.0
+#         self.gripper_threshold = 0.1  # Threshold for gripper state
         
-        # Update FrameTransformer to use panda_link7 instead of panda_hand (which doesn't exist in custom USD)
-        self.scene.ee_frame.target_frames = [
-            FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_link7",  # Use link7 instead of panda_hand
-                name="end_effector",
-                offset=OffsetCfg(
-                    pos=[0.0, 0.0, 0.1034],  # Offset to gripper tip
-                ),
-            ),
-        ]
+#         # Update FrameTransformer to use panda_link7 instead of panda_hand (which doesn't exist in custom USD)
+#         self.scene.ee_frame.target_frames = [
+#             FrameTransformerCfg.FrameCfg(
+#                 prim_path="{ENV_REGEX_NS}/Robot/panda_link7",  # Use link7 instead of panda_hand
+#                 name="end_effector",
+#                 offset=OffsetCfg(
+#                     pos=[0.0, 0.0, 0.1034],  # Offset to gripper tip
+#                 ),
+#             ),
+#         ]
 
 
 @configclass
@@ -495,6 +494,14 @@ class ReorientObservationsCfg:
             params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
         )
         
+        # Distractor observations
+        distractor_positions = ObsTerm(
+            func=push_observations.distractor_positions_rel,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1")
+            }
+        )
+        
         def __post_init__(self):
             self.enable_corruption = False
             self.concatenate_terms = True
@@ -534,25 +541,25 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
             ),
         )
         
-        self.scene.distractor_2 = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Distractor2",
-            init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[0.5, -0.1, 0.0203],  # Will be positioned by event
-                rot=[1, 0, 0, 0]
-            ),
-            spawn=UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",  # Red for distractors
-                scale=(1.0, 1.0, 1.0),
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
-                    max_depenetration_velocity=5.0,
-                    disable_gravity=False,
-                ),
-            ),
-        )
+        # self.scene.distractor_2 = RigidObjectCfg(
+        #     prim_path="{ENV_REGEX_NS}/Distractor2",
+        #     init_state=RigidObjectCfg.InitialStateCfg(
+        #         pos=[0.5, -0.1, 0.0203],  # Will be positioned by event
+        #         rot=[1, 0, 0, 0]
+        #     ),
+        #     spawn=UsdFileCfg(
+        #         usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",  # Red for distractors
+        #         scale=(1.0, 1.0, 1.0),
+        #         rigid_props=sim_utils.RigidBodyPropertiesCfg(
+        #             solver_position_iteration_count=16,
+        #             solver_velocity_iteration_count=1,
+        #             max_angular_velocity=1000.0,
+        #             max_linear_velocity=1000.0,
+        #             max_depenetration_velocity=5.0,
+        #             disable_gravity=False,
+        #         ),
+        #     ),
+        # )
 
         threshold = 0.01  
         orientation_threshold = 0.0173  
@@ -566,25 +573,23 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
         self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
         
-        # Add event to position distractors adjacent to target (after command is generated)
-        self.events.position_distractors = EventTerm(
-            func=push_mdp.position_distractors_adjacent_to_target,
-            mode="reset",
-            params={
-                "distractor_1_cfg": SceneEntityCfg("distractor_1"),
-                "distractor_2_cfg": SceneEntityCfg("distractor_2"),
-                "command_name": "ee_pose",
-                "distractor_distance": 0.0468,  # Half cube size (2.34cm)
-            },
-        )
+        # Distractors will be positioned by custom post-command-reset logic
+        # (Not using events because events run BEFORE command_manager.reset)
+        # Store configuration for use in custom environment
+        self.distractor_config = {
+            "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+            "distractor_2_cfg": None,
+            "command_name": "ee_pose",
+            "distractor_distance": 0.06,  # Increased from 0.0468 to avoid overlap (cube+clearance)
+        }
         
         self.commands.ee_pose.ranges.pos_x = target_x_range
         self.commands.ee_pose.ranges.pos_y = target_y_range
         self.commands.ee_pose.ranges.yaw = yaw_range
         self.commands.ee_pose.position_only = False  
         self.commands.ee_pose.success_threshold = threshold
-        self.commands.ee_pose.min_radius = 0.15
-        self.commands.ee_pose.max_radius = 0.20  # Small range for reorientation
+        self.commands.ee_pose.min_radius = 0.11
+        self.commands.ee_pose.max_radius = 0.14  # Small range for reorientation
         self.rewards.reaching_goal = None  
         self.rewards.distance_orientation_goal = RwdTerm(
             func=push_mdp.distance_orientation_goal,

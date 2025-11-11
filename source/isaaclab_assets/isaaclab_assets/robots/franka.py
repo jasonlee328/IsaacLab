@@ -208,49 +208,49 @@ FRANKA_ROBOTIQ_GRIPPER_CFG.actuators = {
 # See GitHub issue: https://github.com/isaac-sim/IsaacLab/issues/1299
 # This uses a pre-assembled USD with proper joint structure based on the community solution.
 
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG = FRANKA_PANDA_CFG.copy()
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.usd_path = "/home/jason/IsaacLab/Franka/Collected_franka_robotiq/franka_robotiq.usd"
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.variants = None  # Pre-assembled file, no variants needed
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.rigid_props.disable_gravity = True
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.init_state.joint_pos = {
-    "panda_joint1": 0.0,
-    "panda_joint2": -0.569,
-    "panda_joint3": 0.0,
-    "panda_joint4": -2.810,
-    "panda_joint5": 0.0,
-    "panda_joint6": 3.037,
-    "panda_joint7": 0.741,
-    # Robotiq 2F-85 gripper joints (pre-assembled USD structure from GitHub #1299)
-    # The local USD has: outer_knuckle_joints (main actuated) + inner_finger_joints (passive)
-    ".*_outer_knuckle_joint": 0.0,      # Main actuated joints - open position
-    ".*_inner_finger_joint": 0.0,       # Passive joints
-}
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.init_state.pos = (-0.85, 0, 0.76)
-FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.actuators = {
-    "panda_shoulder": ImplicitActuatorCfg(
-        joint_names_expr=["panda_joint[1-4]"],
-        effort_limit_sim=5200.0,
-        velocity_limit_sim=2.175,
-        stiffness=1100.0,
-        damping=80.0,
-    ),
-    "panda_forearm": ImplicitActuatorCfg(
-        joint_names_expr=["panda_joint[5-7]"],
-        effort_limit_sim=720.0,
-        velocity_limit_sim=2.61,
-        stiffness=1000.0,
-        damping=80.0,
-    ),
-    # Robotiq 2F-85 gripper - based on GitHub issue #1299 solution
-    # The pre-assembled USD uses outer_knuckle_joints as the main actuated joints
-    "robotiq_gripper": ImplicitActuatorCfg(
-        joint_names_expr=[".*_outer_knuckle_joint"],  # Main actuated joints (left + right)
-        effort_limit_sim=200.0,
-        velocity_limit_sim=0.2,
-        stiffness=2e3,
-        damping=1e2,
-    ),
-}
+# FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG = FRANKA_PANDA_CFG.copy()
+# FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.usd_path = "/home/jason/IsaacLab/Franka/Collected_franka_robotiq/franka_robotiq.usd"
+# FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.variants = None  # Pre-assembled file, no variants needed
+# FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.spawn.rigid_props.disable_gravity = True
+# FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.init_state.joint_pos = {
+#     "panda_joint1": 0.0,
+#     "panda_joint2": -0.569,
+#     "panda_joint3": 0.0,
+#     "panda_joint4": -2.810,
+#     "panda_joint5": 0.0,
+#     "panda_joint6": 3.037,
+#     "panda_joint7": 0.741,
+#     # Robotiq 2F-85 gripper joints (pre-assembled USD structure from GitHub #1299)
+#     # The local USD has: outer_knuckle_joints (main actuated) + inner_finger_joints (passive)
+#     ".*_outer_knuckle_joint": 0.0,      # Main actuated joints - open position
+#     ".*_inner_finger_joint": 0.0,       # Passive joints
+# }
+# FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.init_state.pos = (-0.85, 0, 0.76)
+# FRANKA_ROBOTIQ_GRIPPER_CUSTOM_CFG.actuators = {
+#     "panda_shoulder": ImplicitActuatorCfg(
+#         joint_names_expr=["panda_joint[1-4]"],
+#         effort_limit_sim=5200.0,
+#         velocity_limit_sim=2.175,
+#         stiffness=1100.0,
+#         damping=80.0,
+#     ),
+#     "panda_forearm": ImplicitActuatorCfg(
+#         joint_names_expr=["panda_joint[5-7]"],
+#         effort_limit_sim=720.0,
+#         velocity_limit_sim=2.61,
+#         stiffness=1000.0,
+#         damping=80.0,
+#     ),
+#     # Robotiq 2F-85 gripper - based on GitHub issue #1299 solution
+#     # The pre-assembled USD uses outer_knuckle_joints as the main actuated joints
+#     "robotiq_gripper": ImplicitActuatorCfg(
+#         joint_names_expr=[".*_outer_knuckle_joint"],  # Main actuated joints (left + right)
+#         effort_limit_sim=200.0,
+#         velocity_limit_sim=0.2,
+#         stiffness=2e3,
+#         damping=1e2,
+#     ),
+# }
 
 
 """
@@ -274,7 +274,7 @@ Gripper Control:
 # Base articulation configuration (no actuators yet - robot agnostic)
 FRANKA_ROBOTIQ_BASE_ARTICULATION = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path="/home/jason/IsaacLab/nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
+        usd_path="./nvidia_assets/Franka/Collected_franka_robotiq/franka_robotiq.usd",
         activate_contact_sensors=False,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=True,
