@@ -20,7 +20,7 @@ tasks:
       --log_project_name Isaac-RL \
       --num_envs 2048 \
       --video --video_length 300 --video_interval 50000 \
-      --run_name Blocks-Robotiq2f85-CustomOmni-Reorient-180-3cm-tcp-pat
+      --run_name Blocks-Robotiq2f85-CustomOmni-Reorient-min006-max010-dist006
 
 
   datasets:
@@ -60,6 +60,6 @@ tasks:
     priority: urgent  
     preemptible: true
   constraints:
-    cluster: [ ai2/ceres-cirrascale, ai2/jupiter-cirrascale-2 ]
+    cluster: [ ai2/ceres-cirrascale ]
   hostNetworking: true
   leaderSelection: true

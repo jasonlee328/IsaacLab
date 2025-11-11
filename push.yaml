@@ -20,7 +20,8 @@ tasks:
       --log_project_name Isaac-RL \
       --num_envs 2048 \
       --video --video_length 100 --video_interval 50000 \
-      --run_name push-tcp-pat
+      --run_name push-debug
+      
 
   datasets:
   - mountPath: /weka/oe-training-default
@@ -59,6 +60,6 @@ tasks:
     priority: urgent  
     preemptible: true
   constraints:
-    cluster: [ ai2/ceres-cirrascale, ai2/jupiter-cirrascale-2 ]
+    cluster: [ ai2/ceres-cirrascale ]
   hostNetworking: true
   leaderSelection: true

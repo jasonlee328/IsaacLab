@@ -16,7 +16,7 @@ tasks:
     echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
         --task Blocks-Robotiq2f85-CustomOmni-Push \
         --num_envs 1   \
-        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_robotiq_2f85/2025-10-27_06-45-55_push-tcp-pat/model_1100.pt \
+        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_robotiq_2f85/2025-10-31_17-59-13_push-tcp-pat-60radius/model_32600.pt \
         --video --video_length 1600 --headless
  
   datasets:
