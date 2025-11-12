@@ -198,6 +198,131 @@ def distance_orientation_goal(
     return success_mask
 
 
+def distance_orientation_goal_with_distractors(
+    env: ManagerBasedEnv,
+    object_cfg: SceneEntityCfg,
+    goal_cfg: str,
+    distractor_cfgs: list[SceneEntityCfg] | None = None,
+    distance_threshold: float = 0.05,
+    orientation_threshold: float = 0.1,
+    distractor_distance_threshold: float = 0.02,
+    distractor_orientation_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Binary reward for object reaching goal while keeping distractors at their initial poses.
+    
+    This reward function extends distance_orientation_goal by adding a constraint that
+    distractor objects must remain at their initial spawning positions. The agent receives
+    a reward only if:
+    1. The target object reaches the goal pose (position + orientation), AND
+    2. All distractors remain within threshold of their initial poses
+    
+    The environment must store initial distractor poses in env.distractor_initial_poses_w
+    as a dictionary mapping distractor names to (pos, quat) tuples.
+    
+    Args:
+        env: The environment.
+        object_cfg: Scene entity config for the target object to track.
+        goal_cfg: Name of the command term that defines the goal pose.
+        distractor_cfgs: List of scene entity configs for distractor objects.
+                        If None or empty, behaves like distance_orientation_goal.
+        distance_threshold: Maximum position error (in meters) for target object success.
+        orientation_threshold: Maximum orientation error (in radians) for target object success.
+        distractor_distance_threshold: Maximum position error (in meters) for distractors.
+        distractor_orientation_threshold: Maximum orientation error (in radians) for distractors.
+    
+    Returns:
+        Binary reward tensor of shape (num_envs,). Returns 1.0 when target object is at goal
+        AND all distractors are at their initial poses, 0.0 otherwise.
+    """
+    # First, check if the target object reaches the goal
+    object_asset: RigidObject = env.scene[object_cfg.name]
+    command_term = env.command_manager._terms[goal_cfg]
+
+    goal_pos_world = command_term.pose_command_w[:, :3]  # (num_envs, 3)
+    goal_quat_world = command_term.pose_command_w[:, 3:]  # (num_envs, 4)
+    
+    obj_pos_world = object_asset.data.root_pos_w[:, :3]  # (num_envs, 3)
+    obj_quat_world = object_asset.data.root_quat_w  # (num_envs, 4)
+    
+    # Compute target object pose error
+    pos_error, rot_error = compute_pose_error(
+        goal_pos_world,
+        goal_quat_world,
+        obj_pos_world,
+        obj_quat_world,
+    )
+    
+    position_error = torch.norm(pos_error, dim=-1)
+    orientation_error = torch.norm(rot_error, dim=-1)
+    
+    # Check target object success
+    target_position_success = position_error < distance_threshold
+    target_orientation_success = orientation_error < orientation_threshold
+    target_success = target_position_success & target_orientation_success
+    
+    # Now check distractors (if any)
+    if distractor_cfgs is None or len(distractor_cfgs) == 0:
+        # No distractors, just return target success
+        return target_success.float()
+    
+    # Check if environment has stored initial distractor poses
+    if not hasattr(env, 'distractor_initial_poses_w'):
+        raise AttributeError(
+            "Environment must have 'distractor_initial_poses_w' attribute to track distractor poses. "
+            "This should be a dictionary mapping distractor names to (pos, quat) tuples."
+        )
+    
+    # Initialize distractor success as True for all environments
+    all_distractors_success = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+    
+    # Check each distractor
+    for distractor_cfg in distractor_cfgs:
+        if distractor_cfg is None:
+            continue
+            
+        distractor_name = distractor_cfg.name
+        
+        # Skip if distractor not in scene (e.g., commented out)
+        if distractor_name not in env.scene.keys():
+            continue
+        
+        distractor_asset: RigidObject = env.scene[distractor_name]
+        
+        # Get initial pose for this distractor
+        if distractor_name not in env.distractor_initial_poses_w:
+            raise KeyError(f"Distractor '{distractor_name}' not found in env.distractor_initial_poses_w")
+        
+        initial_pos_world, initial_quat_world = env.distractor_initial_poses_w[distractor_name]
+        
+        # Get current pose
+        current_pos_world = distractor_asset.data.root_pos_w[:, :3]  # (num_envs, 3)
+        current_quat_world = distractor_asset.data.root_quat_w  # (num_envs, 4)
+        
+        # Compute pose error relative to initial pose
+        distractor_pos_error, distractor_rot_error = compute_pose_error(
+            initial_pos_world,
+            initial_quat_world,
+            current_pos_world,
+            current_quat_world,
+        )
+        
+        distractor_position_error = torch.norm(distractor_pos_error, dim=-1)
+        distractor_orientation_error = torch.norm(distractor_rot_error, dim=-1)
+        
+        # Check if this distractor is within threshold of initial pose
+        distractor_position_ok = distractor_position_error < distractor_distance_threshold
+        distractor_orientation_ok = distractor_orientation_error < distractor_orientation_threshold
+        distractor_ok = distractor_position_ok & distractor_orientation_ok
+        
+        # Update overall distractor success
+        all_distractors_success = all_distractors_success & distractor_ok
+    
+    # Final success: target reaches goal AND all distractors at initial poses
+    success_mask = target_success & all_distractors_success
+    
+    return success_mask.float()
+
+
 def orientation_goal(
     env: ManagerBasedEnv,
     object_cfg: SceneEntityCfg,

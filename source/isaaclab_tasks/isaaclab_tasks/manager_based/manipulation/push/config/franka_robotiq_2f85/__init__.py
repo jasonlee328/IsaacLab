@@ -12,10 +12,18 @@ from isaaclab_tasks.manager_based.manipulation.push import mdp as push_mdp
 
 
 class ReorientWithDistractorsEnv(ManagerBasedRLEnv):
-    """Custom environment that positions distractors after command reset."""
+    """Custom environment that positions distractors after command reset and tracks their initial poses."""
+    
+    def __init__(self, cfg, render_mode=None, **kwargs):
+        """Initialize environment and setup distractor tracking."""
+        super().__init__(cfg, render_mode, **kwargs)
+        
+        # Initialize dictionary to store initial distractor poses (in world coordinates)
+        # Format: {distractor_name: (initial_pos_w, initial_quat_w)}
+        self.distractor_initial_poses_w = {}
     
     def _reset_idx(self, env_ids: Sequence[int]):
-        """Override reset to position distractors AFTER command manager resets."""
+        """Override reset to position distractors AFTER command manager resets and store their initial poses."""
         # Call parent reset (includes command_manager.reset())
         super()._reset_idx(env_ids)
         
@@ -26,6 +34,35 @@ class ReorientWithDistractorsEnv(ManagerBasedRLEnv):
                 env_ids,
                 **self.cfg.distractor_config
             )
+            
+            # Store initial poses for all distractors after they've been positioned
+            # This allows the reward function to check if distractors have been moved
+            distractor_cfgs = self.cfg.distractor_config.get("distractor_1_cfg"), self.cfg.distractor_config.get("distractor_2_cfg")
+            
+            for distractor_cfg in distractor_cfgs:
+                if distractor_cfg is None:
+                    continue
+                    
+                distractor_name = distractor_cfg.name
+                
+                # Skip if distractor not in scene
+                if distractor_name not in self.scene.keys():
+                    continue
+                
+                # Get the distractor asset
+                distractor_asset = self.scene[distractor_name]
+                
+                # Store or update initial poses for the reset environments
+                if distractor_name not in self.distractor_initial_poses_w:
+                    # First time - create tensors for all environments
+                    self.distractor_initial_poses_w[distractor_name] = (
+                        distractor_asset.data.root_pos_w[:, :3].clone(),
+                        distractor_asset.data.root_quat_w.clone(),
+                    )
+                else:
+                    # Update only the environments being reset
+                    self.distractor_initial_poses_w[distractor_name][0][env_ids] = distractor_asset.data.root_pos_w[env_ids, :3].clone()
+                    self.distractor_initial_poses_w[distractor_name][1][env_ids] = distractor_asset.data.root_quat_w[env_ids].clone()
 
 
 # gym.register(

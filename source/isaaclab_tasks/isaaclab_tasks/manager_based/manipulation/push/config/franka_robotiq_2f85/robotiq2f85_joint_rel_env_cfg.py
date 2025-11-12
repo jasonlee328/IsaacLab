@@ -494,9 +494,31 @@ class ReorientObservationsCfg:
             params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
         )
         
-        # Distractor observations
+        # Distractor observations (current state)
         distractor_positions = ObsTerm(
             func=push_observations.distractor_positions_rel,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1")
+            }
+        )
+        
+        distractor_orientations = ObsTerm(
+            func=push_observations.distractor_orientations_current,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1")
+            }
+        )
+        
+        # Distractor initial poses (target state to maintain)
+        distractor_initial_positions = ObsTerm(
+            func=push_observations.distractor_initial_positions_rel,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1")
+            }
+        )
+        
+        distractor_initial_orientations = ObsTerm(
+            func=push_observations.distractor_initial_orientations,
             params={
                 "distractor_1_cfg": SceneEntityCfg("distractor_1")
             }
@@ -580,7 +602,7 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
             "distractor_1_cfg": SceneEntityCfg("distractor_1"),
             "distractor_2_cfg": None,
             "command_name": "ee_pose",
-            "distractor_distance": 0.06,  # Increased from 0.0468 to avoid overlap (cube+clearance)
+            "distractor_distance": 0.1,  # Increased from 0.0468 to avoid overlap (cube+clearance)
         }
         
         self.commands.ee_pose.ranges.pos_x = target_x_range
@@ -591,13 +613,19 @@ class FrankaRobotiq2f85CustomOmniReorientEnvCfg(FrankaRobotiq2f85CustomOmniRelTr
         self.commands.ee_pose.min_radius = 0.11
         self.commands.ee_pose.max_radius = 0.14  # Small range for reorientation
         self.rewards.reaching_goal = None  
-        self.rewards.distance_orientation_goal = RwdTerm(
-            func=push_mdp.distance_orientation_goal,
+        self.rewards.distance_orientation_goal_distractors = RwdTerm(
+            func=push_mdp.distance_orientation_goal_with_distractors,
             params={
                 "object_cfg": SceneEntityCfg("cube"),
                 "goal_cfg": "ee_pose",
+                "distractor_cfgs": [
+                    SceneEntityCfg("distractor_1"),
+                    # SceneEntityCfg("distractor_2"),  # Uncomment when distractor_2 is enabled
+                ],
                 "distance_threshold": threshold,
                 "orientation_threshold": orientation_threshold,
+                "distractor_distance_threshold": 0.02,  # 2cm tolerance for distractors
+                "distractor_orientation_threshold": 0.1,  # ~5.7 degrees tolerance
             },
             weight=1.0, 
         )

@@ -392,6 +392,24 @@ def distractor_positions_rel(env: ManagerBasedRLEnv,
     return dist1_pos
 
 
+def distractor_orientations_current(env: ManagerBasedRLEnv,
+                                   distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1")) -> torch.Tensor:
+    """Current distractor cube orientation as quaternion.
+    
+    Returns the current orientation of the distractor cube.
+    Shape: (num_envs, 4) - [qw, qx, qy, qz]
+    """
+    from isaaclab.assets import RigidObject
+    
+    # Extract distractor
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    
+    # Get current orientation
+    dist1_quat_w = distractor_1.data.root_quat_w
+    
+    return dist1_quat_w
+
+
 def distractor_quats_rel(env: ManagerBasedRLEnv,
                         distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1"),
                         distractor_2_cfg: SceneEntityCfg = SceneEntityCfg("distractor_2")) -> torch.Tensor:
@@ -413,6 +431,72 @@ def distractor_quats_rel(env: ManagerBasedRLEnv,
     # Concatenate quaternions
     return torch.cat([dist1_quat_w, dist2_quat_w], dim=-1)
 
+
+def distractor_initial_positions_rel(env: ManagerBasedRLEnv,
+                                     distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1")) -> torch.Tensor:
+    """Initial distractor cube positions relative to environment origin.
+    
+    Returns the initial spawning positions of distractor cubes (stored during reset).
+    This allows the policy to know where distractors should be and guide them back if moved.
+    
+    Shape: (num_envs, 3) - [dist1_x, dist1_y, dist1_z]
+    
+    Note: Requires the environment to have 'distractor_initial_poses_w' attribute,
+          which is set by ReorientWithDistractorsEnv during reset.
+    """
+    # Check if initial poses are stored
+    if not hasattr(env, 'distractor_initial_poses_w'):
+        # Return zeros if not initialized (shouldn't happen in practice)
+        return torch.zeros(env.num_envs, 3, device=env.device)
+    
+    distractor_name = distractor_1_cfg.name
+    
+    # Check if this specific distractor is tracked
+    if distractor_name not in env.distractor_initial_poses_w:
+        # Return zeros if this distractor isn't tracked
+        return torch.zeros(env.num_envs, 3, device=env.device)
+    
+    # Get initial position in world frame
+    initial_pos_w, _ = env.distractor_initial_poses_w[distractor_name]
+    
+    # Convert to environment-relative coordinates
+    initial_pos_rel = initial_pos_w - env.scene.env_origins
+    
+    return initial_pos_rel
+
+
+def distractor_initial_orientations(env: ManagerBasedRLEnv,
+                                    distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1")) -> torch.Tensor:
+    """Initial distractor cube orientations as quaternions.
+    
+    Returns the initial spawning orientations of distractor cubes (stored during reset).
+    This allows the policy to know the target orientation for distractors.
+    
+    Shape: (num_envs, 4) - [dist1_qw, dist1_qx, dist1_qy, dist1_qz]
+    
+    Note: Requires the environment to have 'distractor_initial_poses_w' attribute,
+          which is set by ReorientWithDistractorsEnv during reset.
+    """
+    # Check if initial poses are stored
+    if not hasattr(env, 'distractor_initial_poses_w'):
+        # Return identity quaternion if not initialized
+        identity_quat = torch.zeros(env.num_envs, 4, device=env.device)
+        identity_quat[:, 0] = 1.0  # w component
+        return identity_quat
+    
+    distractor_name = distractor_1_cfg.name
+    
+    # Check if this specific distractor is tracked
+    if distractor_name not in env.distractor_initial_poses_w:
+        # Return identity quaternion if this distractor isn't tracked
+        identity_quat = torch.zeros(env.num_envs, 4, device=env.device)
+        identity_quat[:, 0] = 1.0  # w component
+        return identity_quat
+    
+    # Get initial quaternion
+    _, initial_quat_w = env.distractor_initial_poses_w[distractor_name]
+    
+    return initial_quat_w
 
 
 ##
