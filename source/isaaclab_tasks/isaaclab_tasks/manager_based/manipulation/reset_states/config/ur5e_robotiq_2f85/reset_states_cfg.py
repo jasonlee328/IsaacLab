@@ -590,7 +590,7 @@ class ResetStatesTerminationCfg:
                 task_mdp.CollisionAnalyzerCfg(
                     num_points=1024,
                     max_dist=0.5,
-                    min_dist=-0.0005,
+                    min_dist=0,
                     asset_cfg=SceneEntityCfg("insertive_object"),
                     obstacle_cfgs=[SceneEntityCfg("receptive_object")],
                 ),

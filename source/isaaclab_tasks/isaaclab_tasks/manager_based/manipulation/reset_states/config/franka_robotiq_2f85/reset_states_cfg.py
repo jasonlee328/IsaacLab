@@ -136,7 +136,7 @@ class ResetStatesBaseEventCfg:
     """Configuration for randomization."""
 
     # startup: low friction to avoid slip
-    reset_robot_material = EventTerm(
+    robot_material = EventTerm(
         func=task_mdp.randomize_rigid_body_material,  # type: ignore
         mode="startup",
         params={
@@ -256,7 +256,7 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             "fixed_asset_offset": None,
             "pose_range_b": {
                 "x": (0.45, 0.85), #robot root is at -0.5 in table frame
-                "y": (-0.35, 0.35),
+                "y": (-0.2, 0.2),
                 "z": (0.0, 0.3),
                 "roll": (0.0, 0.0),
                 "pitch": (np.pi / 3, 2 * np.pi / 3),  # UR5e convention - offset applied automatically
@@ -362,7 +362,7 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
         params={
             "pose_range": {
                 "x": (-0.05, 0.35),
-                "y": (-0.25, 0.25),
+                "y": (-0.2, 0.2),
                 "z": (0.02, 0.3),  # Table height (matches Franka push config)
                 "roll": (-np.pi, np.pi),
                 "pitch": (-np.pi, np.pi),
@@ -446,7 +446,7 @@ class ObjectNearReceptiveEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "pose_range": {
                 "x": (-0.02, 0.02),      # Box size: 10cm x 10cm x 5cm
                 "y": (-0.02, 0.02), 
-                "z": (0.04, 0.06),
+                "z": (0.04, 0.08),
                 "roll": (-np.pi/8, np.pi/8),    # Small orientation variation
                 "pitch": (-np.pi/8, np.pi/8),
                 "yaw": (-np.pi/8, np.pi/8),
