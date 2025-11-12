@@ -50,7 +50,7 @@ class RlStateSceneCfg(InteractiveSceneCfg):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.02),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.001),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -104,8 +104,8 @@ class BaseEventCfg:
         func=task_mdp.randomize_rigid_body_material,  # type: ignore
         mode="startup",
         params={
-            "static_friction_range": (1.2, 1.2),
-            "dynamic_friction_range": (1.0, 1.0),
+            "static_friction_range": (0.3, 0.3),
+            "dynamic_friction_range": (0.2, 0.2),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 1,
             "asset_cfg": SceneEntityCfg("robot"),
@@ -113,13 +113,13 @@ class BaseEventCfg:
         },
     )
 
-    # use large friction to avoid slipping
+    # match UR/collection low friction
     insertive_object_material = EventTerm(
         func=task_mdp.randomize_rigid_body_material,  # type: ignore
         mode="startup",
         params={
-            "static_friction_range": (2.0, 2.0),
-            "dynamic_friction_range": (1.9, 1.9),
+            "static_friction_range": (0.3, 0.3),
+            "dynamic_friction_range": (0.2, 0.2),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 1,
             "asset_cfg": SceneEntityCfg("insertive_object"),
@@ -127,13 +127,13 @@ class BaseEventCfg:
         },
     )
 
-    # use large friction to avoid slipping
+    # match UR/collection low friction
     receptive_object_material = EventTerm(
         func=task_mdp.randomize_rigid_body_material,  # type: ignore
         mode="startup",
         params={
-            "static_friction_range": (2.0, 2.0),
-            "dynamic_friction_range": (1.9, 1.9),
+            "static_friction_range": (0.3, 0.3),
+            "dynamic_friction_range": (0.2, 0.2),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 1,
             "asset_cfg": SceneEntityCfg("receptive_object"),
@@ -154,42 +154,42 @@ class BaseEventCfg:
     #     },
     # )
 
-    randomize_robot_mass = EventTerm(
-        func=task_mdp.randomize_rigid_body_mass,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "mass_distribution_params": (1.3, 1.3),
-            "operation": "scale",
-            "distribution": "uniform",
-            "recompute_inertia": True,
-        },
-    )
+    # randomize_robot_mass = EventTerm(
+    #     func=task_mdp.randomize_rigid_body_mass,
+    #     mode="startup",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot"),
+    #         "mass_distribution_params": (1.3, 1.3),
+    #         "operation": "scale",
+    #         "distribution": "uniform",
+    #         "recompute_inertia": True,
+    #     },
+    # )
 
-    randomize_insertive_object_mass = EventTerm(
-        func=task_mdp.randomize_rigid_body_mass,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("insertive_object"),
-            # we assume insertive object is somewhere between 20g and 200g
-            "mass_distribution_params": (0.2, 0.2),
-            "operation": "abs",
-            "distribution": "uniform",
-            "recompute_inertia": True,
-        },
-    )
+    # randomize_insertive_object_mass = EventTerm(
+    #     func=task_mdp.randomize_rigid_body_mass,
+    #     mode="startup",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("insertive_object"),
+    #         # we assume insertive object is somewhere between 20g and 200g
+    #         "mass_distribution_params": (0.2, 0.2),
+    #         "operation": "abs",
+    #         "distribution": "uniform",
+    #         "recompute_inertia": True,
+    #     },
+    # )
 
-    randomize_receptive_object_mass = EventTerm(
-        func=task_mdp.randomize_rigid_body_mass,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("receptive_object"),
-            "mass_distribution_params": (1.5, 1.5),
-            "operation": "scale",
-            "distribution": "uniform",
-            "recompute_inertia": True,
-        },
-    )
+    # randomize_receptive_object_mass = EventTerm(
+    #     func=task_mdp.randomize_rigid_body_mass,
+    #     mode="startup",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("receptive_object"),
+    #         "mass_distribution_params": (1.5, 1.5),
+    #         "operation": "scale",
+    #         "distribution": "uniform",
+    #         "recompute_inertia": True,
+    #     },
+    # )
 
     # randomize_table_mass = EventTerm(
     #     func=task_mdp.randomize_rigid_body_mass,
@@ -263,14 +263,31 @@ class TrainEventCfg(BaseEventCfg):
 class EvalEventCfg(BaseEventCfg):
     """Configuration for evaluation events."""
 
+    # reset_from_reset_states = EventTerm(
+    #     func=task_mdp.MultiResetManager,
+    #     mode="reset",
+    #     params={
+    #         "base_paths": [
+    #             str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAnywhere"),
+    #         ],
+    #         "probs": [1.0],
+    #         "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+    #     },
+    # )
+
     reset_from_reset_states = EventTerm(
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
             "base_paths": [
                 str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAnywhere"),
+                # str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEAround"),
+                str(get_octilab_reset_state_datasets_path() / "ObjectRestingEEAroundInsertive"),
+                str(get_octilab_reset_state_datasets_path() / "ObjectAnywhereEEGrasped"),
+                str(get_octilab_reset_state_datasets_path() / "ObjectNearReceptiveEEGrasped"),
+                # f"{OCTILAB_CLOUD_ASSETS_DIR}/Datasets/Resets/Assemblies/ObjectPartiallyAssembledEEGrasped",
             ],
-            "probs": [1.0],
+            "probs": [1.0, 1.0, 1.0, 0.01],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
         },
     )
@@ -549,7 +566,7 @@ def make_insertive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.001),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )

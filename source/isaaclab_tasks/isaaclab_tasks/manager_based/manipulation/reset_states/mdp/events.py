@@ -1453,6 +1453,23 @@ class MultiResetManager(ManagerTermBase):
         # Reset velocities
         robot: Articulation = self._env.scene["robot"]
         robot.set_joint_velocity_target(torch.zeros_like(robot.data.joint_vel[env_ids]), env_ids=env_ids)
+        # Also clear object root velocities to avoid impulses on load
+        if "insertive_object" in self._env.scene.rigid_objects:
+            insertive = self._env.scene["insertive_object"]
+            zero_vel = torch.zeros(
+                (len(env_ids), 6),
+                device=insertive.data.default_root_state.device,
+                dtype=insertive.data.default_root_state.dtype,
+            )
+            insertive.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
+        if "receptive_object" in self._env.scene.rigid_objects:
+            receptive = self._env.scene["receptive_object"]
+            zero_vel = torch.zeros(
+                (len(env_ids), 6),
+                device=receptive.data.default_root_state.device,
+                dtype=receptive.data.default_root_state.dtype,
+            )
+            receptive.write_root_velocity_to_sim(zero_vel, env_ids=env_ids)
 
 
 def sample_state_data_set(episode_data: dict, idx: torch.Tensor, device: torch.device) -> dict:

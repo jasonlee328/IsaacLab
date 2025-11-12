@@ -446,10 +446,10 @@ class ObjectNearReceptiveEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "pose_range": {
                 "x": (-0.02, 0.02),      # Box size: 10cm x 10cm x 5cm
                 "y": (-0.02, 0.02), 
-                "z": (0.045, 0.06),
-                "roll": (0,0),    # Small orientation variation
-                "pitch": (0, 0),
-                "yaw": (0, 0),
+                "z": (0.04, 0.06),
+                "roll": (-np.pi/8, np.pi/8),    # Small orientation variation
+                "pitch": (-np.pi/8, np.pi/8),
+                "yaw": (-np.pi/8, np.pi/8),
             },
             "insertive_asset_cfg": SceneEntityCfg("insertive_object"),
             "receptive_asset_cfg": SceneEntityCfg("receptive_object"),
@@ -494,8 +494,8 @@ class ResetStatesTerminationCfg:
         func=task_mdp.gripper_orientation_limit,
         params={
             "robot_cfg": SceneEntityCfg("robot"),
-            "ee_body_name": "panda_link7",
-            "max_angle_from_down": np.pi / 3,
+            "ee_body_name": "robotiq_arg2f_base_link",
+            "max_angle_from_down": np.pi / 2,
         },
     )
 
@@ -504,10 +504,10 @@ class ResetStatesTerminationCfg:
         params={
             "object_cfgs": [SceneEntityCfg("insertive_object"), SceneEntityCfg("receptive_object")],
             "robot_cfg": SceneEntityCfg("robot"),
-            "ee_body_name": "panda_link7",
+            "ee_body_name": "robotiq_arg2f_base_link",
             "collision_analyzer_cfgs": [
                 task_mdp.CollisionAnalyzerCfg(
-                    num_points=256,
+                    num_points=512,
                     max_dist=0.5,
                     min_dist=-0.0005,
                     asset_cfg=SceneEntityCfg("robot"),
@@ -516,14 +516,14 @@ class ResetStatesTerminationCfg:
                 task_mdp.CollisionAnalyzerCfg(
                     num_points=256,
                     max_dist=0.5,
-                    min_dist=0.001,
+                    min_dist=0.0,
                     asset_cfg=SceneEntityCfg("robot"),
                     obstacle_cfgs=[SceneEntityCfg("receptive_object")],
                 ),
                 task_mdp.CollisionAnalyzerCfg(
-                    num_points=2048,
+                    num_points=512,
                     max_dist=0.5,
-                    min_dist=0.0025,
+                    min_dist=-0.0005,
                     asset_cfg=SceneEntityCfg("insertive_object"),
                     obstacle_cfgs=[SceneEntityCfg("receptive_object")],
                 ),
@@ -601,7 +601,7 @@ def make_receptive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )

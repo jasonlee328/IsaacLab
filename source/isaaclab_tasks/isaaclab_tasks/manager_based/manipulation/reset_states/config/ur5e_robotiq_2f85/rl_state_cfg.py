@@ -68,7 +68,7 @@ class RlStateSceneCfg(InteractiveSceneCfg):
                 solver_velocity_iteration_count=0,
                 disable_gravity=False,
                 # receptive object does not move
-                kinematic_enabled=False,
+                kinematic_enabled=True,
             ),
             # since kinematic_enabled=True, mass does not matter
             mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
