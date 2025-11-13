@@ -363,6 +363,111 @@ def store_distractor_initial_positions(
     env._distractor_initial_pos['distractor_2'][env_ids] = distractor_2.data.root_pos_w[env_ids, :3].clone()
 
 
+def position_distractors_between_target(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    distractor_1_cfg: SceneEntityCfg,
+    distractor_2_cfg: SceneEntityCfg | None,
+    cube_cfg: SceneEntityCfg,
+    command_name: str = "ee_pose",
+    min_distance_from_cube: float = 0.2,
+    max_distance_from_cube: float = 0.5,
+):
+    """Position distractor blocks between the cube and command target position.
+    
+    Places distractors on the direct path between cube and target, with randomized distance
+    from the cube within the specified range. Multiple distractors are placed at different
+    random distances along the same path.
+    
+    Args:
+        env: The environment instance.
+        env_ids: Environment indices to update.
+        distractor_1_cfg: Configuration for the first distractor cube.
+        distractor_2_cfg: Configuration for the second distractor cube (optional).
+        cube_cfg: Configuration for the cube asset.
+        command_name: Name of the command containing target pose.
+        min_distance_from_cube: Minimum distance from cube to distractor (in meters).
+        max_distance_from_cube: Maximum distance from cube to distractor (in meters).
+    """
+    if env_ids is None or len(env_ids) == 0:
+        return
+    
+    from isaaclab.utils.math import combine_frame_transforms
+    
+    # Get the command term and robot
+    command_term = env.command_manager._terms[command_name]
+    robot = command_term.robot
+    
+    # Get cube position in world frame
+    cube: RigidObject = env.scene[cube_cfg.name]
+    cube_pos_w = cube.data.root_pos_w[env_ids, :3]  # (N, 3)
+    
+    # Get target position and orientation from the current command
+    # NOTE: This function should be called AFTER command_manager.reset() to use fresh commands
+    target_pos_b = command_term.pose_command_b[env_ids, :3]  # (N, 3)
+    target_quat_b = command_term.pose_command_b[env_ids, 3:]  # (N, 4)
+    
+    # Transform target from base frame to world frame
+    target_pos_w, target_quat_w = combine_frame_transforms(
+        robot.data.root_pos_w[env_ids],
+        robot.data.root_quat_w[env_ids],
+        target_pos_b,
+        target_quat_b,
+    )
+    
+    # Calculate direction vector from cube to target
+    direction_vector = target_pos_w - cube_pos_w  # (N, 3)
+    distance_cube_to_target = torch.norm(direction_vector[:, :2], dim=-1, keepdim=True)  # (N, 1) - only x,y
+    
+    # Normalize direction (only x,y, keep z separate)
+    direction_unit_xy = direction_vector[:, :2] / (distance_cube_to_target + 1e-6)  # (N, 2)
+    
+    num_envs = len(env_ids)
+    
+    # Position distractor 1
+    # Sample random distance from cube within [min_distance, max_distance]
+    random_distance_1 = torch.empty(num_envs, 1, device=env.device)
+    random_distance_1.uniform_(min_distance_from_cube, max_distance_from_cube)
+    
+    # Clamp to not exceed cube-to-target distance
+    random_distance_1 = torch.min(random_distance_1, distance_cube_to_target - 0.02)  # Leave 2cm buffer
+    
+    # Calculate distractor 1 position
+    distractor_1_pos_w = cube_pos_w.clone()
+    distractor_1_pos_w[:, :2] += direction_unit_xy * random_distance_1  # Move along path in x,y
+    # Keep same Z height as cube
+    
+    # Get distractor 1 object
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    
+    # Create pose tensor and write to simulation
+    distractor_1_pose = torch.cat([distractor_1_pos_w, target_quat_w], dim=-1)
+    distractor_1.write_root_pose_to_sim(distractor_1_pose, env_ids=env_ids)
+    distractor_1.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+    
+    # Position distractor 2 (if exists)
+    if distractor_2_cfg is not None:
+        # Sample different random distance for distractor 2
+        random_distance_2 = torch.empty(num_envs, 1, device=env.device)
+        random_distance_2.uniform_(min_distance_from_cube, max_distance_from_cube)
+        
+        # Clamp to not exceed cube-to-target distance
+        random_distance_2 = torch.min(random_distance_2, distance_cube_to_target - 0.02)
+        
+        # Calculate distractor 2 position
+        distractor_2_pos_w = cube_pos_w.clone()
+        distractor_2_pos_w[:, :2] += direction_unit_xy * random_distance_2
+        # Keep same Z height as cube
+        
+        # Get distractor 2 object
+        distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+        
+        # Create pose tensor and write to simulation
+        distractor_2_pose = torch.cat([distractor_2_pos_w, target_quat_w], dim=-1)
+        distractor_2.write_root_pose_to_sim(distractor_2_pose, env_ids=env_ids)
+        distractor_2.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+
+
 def position_distractors_adjacent_to_target(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,

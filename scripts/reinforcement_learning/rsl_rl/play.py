@@ -57,6 +57,8 @@ import gymnasium as gym
 import os
 import time
 import torch
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
 from rsl_rl.runners import DistillationRunner, OnPolicyRunner
 
@@ -70,6 +72,8 @@ from isaaclab.envs import (
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+from isaaclab.sim.schemas import activate_contact_sensors
+import omni.usd
 
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
 
@@ -78,6 +82,111 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
 # PLACEHOLDER: Extension template (do not remove this comment)
+
+
+class ContactForceVideoWrapper(gym.Wrapper):
+    """Wrapper that overlays contact force information on video frames."""
+    
+    def __init__(self, env, wrist_body_name="panda_link7"):
+        super().__init__(env)
+        self.wrist_body_name = wrist_body_name
+        self.wrist_body_idx = None
+        self.contact_activated = False
+        self.current_contact_force = None
+        self.current_force_mag = 0.0
+        
+        # Try to get robot and activate contact sensors
+        try:
+            robot = self.env.unwrapped.scene["robot"]
+            self.wrist_body_idx = robot.body_names.index(wrist_body_name)
+            
+            # Activate contact sensor on wrist
+            stage = omni.usd.get_context().get_stage()
+            base_prim_path = "/World/envs/env_0/Robot"
+            wrist_path = f"{base_prim_path}/{wrist_body_name}"
+            activate_contact_sensors(wrist_path, threshold=0.01, stage=stage)
+            self.contact_activated = True
+            print(f"[ContactForceVideoWrapper] ✓ Activated contact sensor on: {wrist_body_name}")
+        except Exception as e:
+            print(f"[ContactForceVideoWrapper] WARNING: Could not activate contact sensors: {e}")
+    
+    def _read_contact_force(self):
+        """Read contact force from wrist."""
+        if not self.contact_activated or self.wrist_body_idx is None:
+            return None, 0.0
+        
+        try:
+            robot = self.env.unwrapped.scene["robot"]
+            # Try to access contact forces through the articulation's PhysX view
+            import omni.physics.tensors.impl.api as physx_api
+            
+            physx_view = robot._root_physx_view
+            if hasattr(physx_view, 'get_link_incoming_joint_force'):
+                forces = physx_view.get_link_incoming_joint_force()
+                if forces is not None and forces.shape[1] > self.wrist_body_idx:
+                    link_force = forces[0, self.wrist_body_idx]
+                    force_mag = torch.norm(link_force).item()
+                    if force_mag > 0.1:
+                        return link_force, force_mag
+        except:
+            pass
+        
+        return None, 0.0
+    
+    def render(self):
+        """Render with contact force overlay."""
+        # Get the base frame from environment
+        frame = self.env.render()
+        
+        if frame is None:
+            return frame
+        
+        # Read current contact force
+        self.current_contact_force, self.current_force_mag = self._read_contact_force()
+        
+        # Overlay contact force text on frame
+        if self.current_contact_force is not None and self.current_force_mag > 0.1:
+            # Convert numpy array to PIL Image
+            img = Image.fromarray(frame)
+            draw = ImageDraw.Draw(img)
+            
+            # Try to use a better font, fallback to default
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+                small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+            except:
+                font = ImageFont.load_default()
+                small_font = ImageFont.load_default()
+            
+            # Prepare text
+            force_vec = self.current_contact_force.cpu().numpy()
+            text_lines = [
+                f"CONTACT FORCE: {self.current_force_mag:.3f} N",
+                f"X: {force_vec[0]:+.3f} N",
+                f"Y: {force_vec[1]:+.3f} N",
+                f"Z: {force_vec[2]:+.3f} N",
+            ]
+            
+            # Draw semi-transparent background
+            padding = 10
+            line_height = 30
+            bg_height = len(text_lines) * line_height + 2 * padding
+            bg_width = 350
+            
+            # Draw background rectangle (semi-transparent red)
+            draw.rectangle([10, 10, 10 + bg_width, 10 + bg_height], fill=(220, 50, 50, 180))
+            
+            # Draw text
+            y_offset = 10 + padding
+            for i, line in enumerate(text_lines):
+                text_font = font if i == 0 else small_font
+                draw.text((20, y_offset), line, fill=(255, 255, 255), font=text_font)
+                y_offset += line_height
+            
+            # Convert back to numpy array
+            frame = np.array(img)
+        
+        return frame
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -124,13 +233,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # wrap for video recording
     if args_cli.video:
+        # Add contact force overlay wrapper BEFORE video recording
+        env = ContactForceVideoWrapper(env)
+        
         video_kwargs = {
             "video_folder": os.path.join(log_dir, "videos", "play"),
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
         }
-        print("[INFO] Recording videos during training.")
+        print("[INFO] Recording videos with contact force overlay.")
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
