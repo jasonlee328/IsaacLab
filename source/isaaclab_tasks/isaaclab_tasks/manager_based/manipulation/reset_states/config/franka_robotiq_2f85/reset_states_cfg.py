@@ -69,7 +69,7 @@ class ResetStatesSceneCfg(InteractiveSceneCfg):
                 kinematic_enabled=False,
             ),
             # assume very light
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.001),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -106,7 +106,7 @@ class ResetStatesSceneCfg(InteractiveSceneCfg):
                 kinematic_enabled=False,
             ),
             # since kinematic_enabled=True, mass does not matter
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -523,7 +523,7 @@ class ResetStatesTerminationCfg:
                 task_mdp.CollisionAnalyzerCfg(
                     num_points=512,
                     max_dist=0.5,
-                    min_dist=-0.0005,
+                    min_dist=0.0,
                     asset_cfg=SceneEntityCfg("insertive_object"),
                     obstacle_cfgs=[SceneEntityCfg("receptive_object")],
                 ),
@@ -564,7 +564,7 @@ def make_insertive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -601,7 +601,7 @@ def make_receptive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )

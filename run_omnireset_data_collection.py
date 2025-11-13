@@ -69,7 +69,7 @@ def main():
         "env.scene.receptive_object=cube"
     ], check=True)
  
-    # 6. Reinforcement Learning training
+    #6. Reinforcement Learning training
     subprocess.run([
         "python", "scripts/reinforcement_learning/rsl_rl/train.py",
         "--task", "OmniReset-FrankaRobotiq2f85-RelCartesianOSC-State-v0",

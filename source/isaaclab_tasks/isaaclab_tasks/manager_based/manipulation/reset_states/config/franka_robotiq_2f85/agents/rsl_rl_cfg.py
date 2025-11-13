@@ -27,7 +27,9 @@ class Base_PPORunnerCfg(RslRlOnPolicyRunnerCfg):
     resume = False
     experiment_name = "franka_robotiq_2f85_reset_states_agent"
     policy = RslRlFancyActorCriticCfg(
-        init_noise_std=1.0,
+        # Increased initial noise for better exploration (1.5x)
+        # This adds more randomness to actions early in training, helping discover better policies
+        init_noise_std=1.5,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
         actor_hidden_dims=[512, 256, 128, 64],

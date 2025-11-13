@@ -26,6 +26,7 @@ from isaaclab_assets import OCTILAB_CLOUD_ASSETS_DIR
 from isaaclab_assets.robots.franka import FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG
 
 from isaaclab_tasks.manager_based.manipulation.reset_states.config.franka_robotiq_2f85.actions import (
+    FrankaRobotiq2f85CustomRelativeAction,
     FrankaRobotiq2f85RelativeJointPositionAction,
     FrankaRobotiq2f85RelativeOSCAction,
 )
@@ -50,7 +51,7 @@ class RlStateSceneCfg(InteractiveSceneCfg):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.001),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -287,7 +288,7 @@ class EvalEventCfg(BaseEventCfg):
                 str(get_octilab_reset_state_datasets_path() / "ObjectNearReceptiveEEGrasped"),
                 # f"{OCTILAB_CLOUD_ASSETS_DIR}/Datasets/Resets/Assemblies/ObjectPartiallyAssembledEEGrasped",
             ],
-            "probs": [1.0, 1.0, 1.0, 0.01],
+            "probs": [0.0, 0.0, 0.0, 1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
         },
     )
@@ -523,7 +524,7 @@ class RewardsCfg:
             "target_asset_cfg": SceneEntityCfg("insertive_object"),
             "root_asset_offset_metadata_key": "gripper_offset",
             "std": 1.0,
-            "enable_debug_vis": True,  # Enable visualization: green=insertive object, red=end effector TCP
+            "enable_debug_vis": False,  # Enable visualization: green=insertive object, red=end effector TCP
         },
     )
 
@@ -566,7 +567,7 @@ def make_insertive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.2),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -584,7 +585,7 @@ def make_receptive_object(usd_path: str):
                 disable_gravity=False,
                 kinematic_enabled=False,
             ),
-            mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+            mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
         ),
         init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
     )
@@ -626,7 +627,7 @@ variants = {
 class FrankaRobotiq2f85RlStateCfg(ManagerBasedRLEnvCfg):
     scene: RlStateSceneCfg = RlStateSceneCfg(num_envs=32, env_spacing=1.5)
     observations: ObservationsCfg = ObservationsCfg()
-    actions: FrankaRobotiq2f85RelativeOSCAction = FrankaRobotiq2f85RelativeOSCAction()
+    actions: FrankaRobotiq2f85CustomRelativeAction = FrankaRobotiq2f85CustomRelativeAction()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: BaseEventCfg = MISSING
@@ -664,7 +665,7 @@ class FrankaRobotiq2f85RlStateCfg(ManagerBasedRLEnvCfg):
 # Training configurations
 @configclass
 class FrankaRobotiq2f85RelCartesianOSCTrainCfg(FrankaRobotiq2f85RlStateCfg):
-    """Training configuration for Relative Cartesian OSC action space."""
+    """Training configuration for Relative Joint Position action space."""
 
     events: TrainEventCfg = TrainEventCfg()
     actions: FrankaRobotiq2f85RelativeOSCAction = FrankaRobotiq2f85RelativeOSCAction()
@@ -673,25 +674,13 @@ class FrankaRobotiq2f85RelCartesianOSCTrainCfg(FrankaRobotiq2f85RlStateCfg):
         super().__post_init__()
         self.scene.robot = FRANKA_ROBOTIQ_GRIPPER_CUSTOM_OMNI_PAT_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
 
-        self.events.randomize_robot_actuator_parameters = EventTerm(
-            func=task_mdp.randomize_operational_space_controller_gains,
-            mode="reset",
-            params={
-                "action_name": "arm",
-                "stiffness_distribution_params": (1.3, 1.3),
-                "damping_distribution_params": (1.3, 1.3),
-                "operation": "scale",
-                "distribution": "uniform",
-            },
-        )
-
 
 @configclass
 class FrankaRobotiq2f85RelJointPosTrainCfg(FrankaRobotiq2f85RlStateCfg):
     """Training configuration for Relative Joint Position action space."""
 
     events: TrainEventCfg = TrainEventCfg()
-    actions: FrankaRobotiq2f85RelativeJointPositionAction = FrankaRobotiq2f85RelativeJointPositionAction()
+    actions: FrankaRobotiq2f85CustomRelativeAction = FrankaRobotiq2f85CustomRelativeAction()
 
     def __post_init__(self):
         super().__post_init__()
@@ -713,10 +702,10 @@ class FrankaRobotiq2f85RelJointPosTrainCfg(FrankaRobotiq2f85RlStateCfg):
 # Evaluation configurations
 @configclass
 class FrankaRobotiq2f85RelCartesianOSCEvalCfg(FrankaRobotiq2f85RlStateCfg):
-    """Evaluation configuration for Relative Cartesian OSC action space."""
+    """Evaluation configuration for Relative Joint Position action space."""
 
     events: EvalEventCfg = EvalEventCfg()
-    actions: FrankaRobotiq2f85RelativeOSCAction = FrankaRobotiq2f85RelativeOSCAction()
+    actions: FrankaRobotiq2f85CustomRelativeAction = FrankaRobotiq2f85RelativeOSCAction()
 
     def __post_init__(self):
         super().__post_init__()
@@ -724,24 +713,12 @@ class FrankaRobotiq2f85RelCartesianOSCEvalCfg(FrankaRobotiq2f85RlStateCfg):
         self.episode_length_s = 4.0
 
 
-        self.events.randomize_robot_actuator_parameters = EventTerm(
-            func=task_mdp.randomize_operational_space_controller_gains,
-            mode="reset",
-            params={
-                "action_name": "arm",
-                "stiffness_distribution_params": (1.3, 1.3),
-                "damping_distribution_params": (1.3, 1.3),
-                "operation": "scale",
-                "distribution": "uniform",
-            },
-        )
-
 @configclass
 class FrankaRobotiq2f85RelJointPosEvalCfg(FrankaRobotiq2f85RlStateCfg):
     """Evaluation configuration for Relative Joint Position action space."""
 
     events: EvalEventCfg = EvalEventCfg()
-    actions: FrankaRobotiq2f85RelativeJointPositionAction = FrankaRobotiq2f85RelativeJointPositionAction()
+    actions: FrankaRobotiq2f85CustomRelativeAction = FrankaRobotiq2f85CustomRelativeAction()
 
     def __post_init__(self):
         super().__post_init__()
