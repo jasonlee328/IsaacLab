@@ -145,8 +145,14 @@ class CustomEventCfg:
         mode="reset",
         params={
             # Custom Robotiq gripper has 13 joints total (see GitHub #1299)
-            "default_pose": [
-                0.0, 0.93, 0.0, -1.27, 0.0, 2.17, 0.0,  # 7 arm joints
+            # "default_pose": [
+            #     0.0, 0.93, 0.0, -1.27, 0.0, 2.17, 0.0,  # 7 arm joints
+            #     0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
+            #     0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
+            #     0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
+            # ]
+         "default_pose": [
+                0.0, 0.50, 0.0, -2.03, 0.0, 2.6, 0.0,  # 7 arm joints
                 0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
                 0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
                 0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
@@ -332,7 +338,7 @@ class FrankaRobotiq2f85CustomOmniRelTrainCfg(FrankaRobotiq2f85RLStateCfg):
         
         
         
-############# NUDGE; #############
+############# NUDGE TASK #############
 
    
 @configclass
@@ -422,13 +428,13 @@ class FrankaRobotiq2f85CustomOmniNudgeEnvCfg(FrankaRobotiq2f85CustomOmniRelTrain
 
         
         ##### EVENTS #####
-        cube_x_range = (0.725, 0.725) 
+        cube_x_range = (0.625, 0.625) 
         cube_y_range = (0.0, 0.0)
-        distractor_distance = 0.1  
+        distractor_distance = 0.0470
         
         ##### COMMANDS #####
-        min_radius = 0.11
-        max_radius = 0.14
+        min_radius = 0.05
+        max_radius = 0.05
         yaw_range = (-1.57, 1.57)  
     
         
@@ -699,7 +705,7 @@ class DistractorResetEnv(ManagerBasedRLEnv):
         
         if hasattr(self.cfg, 'nudge_distractor_config'):
             distractor_config = self.cfg.nudge_distractor_config
-            push_mdp.position_distractors_adjacent_to_target(
+            push_mdp.position_distractors_cardinal_to_target(
                 self, 
                 env_ids,
                 **distractor_config

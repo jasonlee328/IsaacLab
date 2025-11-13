@@ -468,6 +468,116 @@ def position_distractors_between_target(
         distractor_2.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
 
 
+def position_distractors_cardinal_to_target(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    distractor_1_cfg: SceneEntityCfg,
+    distractor_2_cfg: SceneEntityCfg | None,
+    command_name: str = "ee_pose",
+    distractor_distance: float = 0.0234,
+):
+    """Position distractor blocks at cardinal directions relative to the target position.
+    
+    Places distractors at one of 4 cardinal directions (0°, 90°, 180°, 270°) from the target.
+    All distractors have the same orientation as the target, making them parallel.
+    If two distractors are used, they are placed at different cardinal positions.
+    
+    Cardinal directions:
+    - 0° (0 rad): Right (+X in target's frame)
+    - 90° (π/2 rad): Front (+Y in target's frame)
+    - 180° (π rad): Left (-X in target's frame)
+    - 270° (3π/2 rad): Back (-Y in target's frame)
+    
+    Args:
+        env: The environment instance.
+        env_ids: Environment indices to update.
+        distractor_1_cfg: Configuration for the first distractor cube.
+        distractor_2_cfg: Configuration for the second distractor cube (optional).
+        command_name: Name of the command containing target pose.
+        distractor_distance: Distance from target center to distractor center (in meters).
+                            Default 0.0234m is half cube size (2.34cm).
+    """
+    if env_ids is None or len(env_ids) == 0:
+        return
+    
+    from isaaclab.utils.math import combine_frame_transforms
+    
+    # Get the command term and robot
+    command_term = env.command_manager._terms[command_name]
+    robot = command_term.robot
+    
+    # Get target position and orientation from the current command
+    target_pos_b = command_term.pose_command_b[env_ids, :3]  # (N, 3)
+    target_quat_b = command_term.pose_command_b[env_ids, 3:]  # (N, 4)
+    
+    # Transform from base frame to world frame
+    target_pos_w, target_quat_w = combine_frame_transforms(
+        robot.data.root_pos_w[env_ids],
+        robot.data.root_quat_w[env_ids],
+        target_pos_b,
+        target_quat_b,
+    )
+    
+    num_envs = len(env_ids)
+    
+    # Define 4 cardinal angles: 0°, 90°, 180°, 270° (in radians)
+    cardinal_angles = torch.tensor([0.0, torch.pi/2, torch.pi, 3*torch.pi/2], device=env.device)
+    
+    # Randomly sample one cardinal direction for each environment
+    # Random index: 0, 1, 2, or 3
+    random_indices_1 = torch.randint(0, 4, (num_envs,), device=env.device)
+    distractor_angle_1 = cardinal_angles[random_indices_1]  # (num_envs,)
+    
+    # Compute distractor 1 position at sampled cardinal direction
+    distractor_1_offset_x = distractor_distance * torch.cos(distractor_angle_1)
+    distractor_1_offset_y = distractor_distance * torch.sin(distractor_angle_1)
+    distractor_1_pos_w = target_pos_w.clone()
+    distractor_1_pos_w[:, 0] += distractor_1_offset_x
+    distractor_1_pos_w[:, 1] += distractor_1_offset_y
+    # Keep same Z (height)
+    
+    # Get distractor 1 object
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    
+    # Create pose tensor and write to simulation
+    distractor_1_pose = torch.cat([distractor_1_pos_w, target_quat_w], dim=-1)
+    distractor_1.write_root_pose_to_sim(distractor_1_pose, env_ids=env_ids)
+    distractor_1.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+    
+    # Position distractor 2 (if exists) at a different cardinal direction
+    if distractor_2_cfg is not None:
+        # Sample different cardinal direction (ensure it's different from distractor 1)
+        # Create a mask of available directions (all except the one used by distractor 1)
+        available_directions = torch.ones((num_envs, 4), device=env.device, dtype=torch.bool)
+        available_directions[torch.arange(num_envs), random_indices_1] = False  # Exclude D1's direction
+        
+        # Sample from remaining 3 directions
+        # Convert boolean mask to indices
+        random_indices_2 = torch.zeros(num_envs, dtype=torch.long, device=env.device)
+        for i in range(num_envs):
+            available = torch.where(available_directions[i])[0]
+            random_idx = torch.randint(0, len(available), (1,), device=env.device)
+            random_indices_2[i] = available[random_idx]
+        
+        distractor_angle_2 = cardinal_angles[random_indices_2]
+        
+        # Compute distractor 2 position
+        distractor_2_offset_x = distractor_distance * torch.cos(distractor_angle_2)
+        distractor_2_offset_y = distractor_distance * torch.sin(distractor_angle_2)
+        distractor_2_pos_w = target_pos_w.clone()
+        distractor_2_pos_w[:, 0] += distractor_2_offset_x
+        distractor_2_pos_w[:, 1] += distractor_2_offset_y
+        # Keep same Z (height)
+        
+        # Get distractor 2 object
+        distractor_2: RigidObject = env.scene[distractor_2_cfg.name]
+        
+        # Create pose tensor and write to simulation
+        distractor_2_pose = torch.cat([distractor_2_pos_w, target_quat_w], dim=-1)
+        distractor_2.write_root_pose_to_sim(distractor_2_pose, env_ids=env_ids)
+        distractor_2.write_root_velocity_to_sim(torch.zeros(num_envs, 6, device=env.device), env_ids=env_ids)
+
+
 def position_distractors_adjacent_to_target(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,

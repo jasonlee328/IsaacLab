@@ -1,3 +1,6 @@
+# Yaml
+/*.yaml
+
 # C++
 **/cmake-build*/
 **/build*/
