@@ -108,6 +108,7 @@ def main():
     
     # reset environment
     obs, _ = env.reset()
+    print(f"[INFO]: Observation dimension: {obs.shape[-1]}")
     print("[INFO]: Environment reset - observe target position")
     
     # simulate environment

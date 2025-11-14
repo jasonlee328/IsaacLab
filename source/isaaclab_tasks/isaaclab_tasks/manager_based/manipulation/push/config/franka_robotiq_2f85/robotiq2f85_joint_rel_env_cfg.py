@@ -353,9 +353,11 @@ class NudgeObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group - optimized for reorientation."""
         
-        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
-        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
-        
+        # joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+        # joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        joint_pos = ObsTerm(func=push_observations.arm_joint_pos_rel)
+        joint_vel = ObsTerm(func=push_observations.arm_joint_vel_rel)
+        gripper_pos = ObsTerm(func=push_observations.gripper_pos)
         ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
         ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
         
@@ -388,7 +390,7 @@ class NudgeObservationsCfg:
         )
         
         distractor_orientations = ObsTerm(
-            func=push_observations.distractor_orientations_current,
+            func=push_observations.distractor_yaw_current,
             params={
                 "distractor_1_cfg": SceneEntityCfg("distractor_1")
             }
@@ -403,7 +405,7 @@ class NudgeObservationsCfg:
         )
         
         distractor_initial_orientations = ObsTerm(
-            func=push_observations.distractor_initial_orientations,
+            func=push_observations.distractor_yaw_initial,
             params={
                 "distractor_1_cfg": SceneEntityCfg("distractor_1")
             }

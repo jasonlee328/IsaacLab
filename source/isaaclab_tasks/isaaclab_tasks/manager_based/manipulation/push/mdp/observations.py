@@ -410,6 +410,28 @@ def distractor_orientations_current(env: ManagerBasedRLEnv,
     return dist1_quat_w
 
 
+def distractor_yaw_current(env: ManagerBasedRLEnv,
+                           distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1")) -> torch.Tensor:
+    """Current distractor cube yaw angle only.
+    
+    Returns only the yaw (z-axis rotation) of the distractor cube.
+    Shape: (num_envs, 1)
+    """
+    from isaaclab.assets import RigidObject
+    
+    # Extract distractor
+    distractor_1: RigidObject = env.scene[distractor_1_cfg.name]
+    
+    # Get current orientation quaternion
+    quat = distractor_1.data.root_quat_w
+    w, x, y, z = quat[:, 0], quat[:, 1], quat[:, 2], quat[:, 3]
+    
+    # Convert quaternion to yaw angle
+    yaw = torch.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    
+    return yaw.unsqueeze(-1)  # shape: (num_envs, 1)
+
+
 def distractor_quats_rel(env: ManagerBasedRLEnv,
                         distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1"),
                         distractor_2_cfg: SceneEntityCfg = SceneEntityCfg("distractor_2")) -> torch.Tensor:
@@ -499,9 +521,137 @@ def distractor_initial_orientations(env: ManagerBasedRLEnv,
     return initial_quat_w
 
 
+def distractor_yaw_initial(env: ManagerBasedRLEnv,
+                           distractor_1_cfg: SceneEntityCfg = SceneEntityCfg("distractor_1")) -> torch.Tensor:
+    """Initial distractor cube yaw angle only.
+    
+    Returns only the initial yaw (z-axis rotation) of the distractor cube.
+    Shape: (num_envs, 1)
+    
+    Note: Requires the environment to have 'distractor_initial_poses_w' attribute.
+    """
+    # Check if initial poses are stored
+    if not hasattr(env, 'distractor_initial_poses_w'):
+        # Return zero yaw if not initialized
+        return torch.zeros(env.num_envs, 1, device=env.device)
+    
+    distractor_name = distractor_1_cfg.name
+    
+    # Check if this specific distractor is tracked
+    if distractor_name not in env.distractor_initial_poses_w:
+        # Return zero yaw if this distractor isn't tracked
+        return torch.zeros(env.num_envs, 1, device=env.device)
+    
+    # Get initial quaternion
+    _, initial_quat_w = env.distractor_initial_poses_w[distractor_name]
+    
+    # Convert quaternion to yaw angle
+    w, x, y, z = initial_quat_w[:, 0], initial_quat_w[:, 1], initial_quat_w[:, 2], initial_quat_w[:, 3]
+    yaw = torch.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+    
+    return yaw.unsqueeze(-1)  # shape: (num_envs, 1)
+
+
 ##
 # Reorientation-specific observations
 ##
+
+def arm_joint_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Arm joint positions only (excludes gripper joints).
+    
+    Returns only the 7 Franka arm joints (panda_joint1-7), excluding gripper joints.
+    
+    Returns:
+        torch.Tensor: Arm joint positions, shape (num_envs, 7)
+    """
+    from isaaclab.assets import Articulation
+    
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Get all joint names
+    joint_names = asset.data.joint_names
+    
+    # Find indices of arm joints (panda_joint1 through panda_joint7)
+    arm_joint_indices = []
+    for i, name in enumerate(joint_names):
+        if name.startswith("panda_joint") and name[-1].isdigit():
+            # This is an arm joint (panda_joint1-7)
+            arm_joint_indices.append(i)
+    
+    # Return arm joint positions relative to default
+    arm_joint_indices = torch.tensor(arm_joint_indices, device=asset.device)
+    return asset.data.joint_pos[:, arm_joint_indices] - asset.data.default_joint_pos[:, arm_joint_indices]
+
+
+def arm_joint_vel_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+    """Arm joint velocities only (excludes gripper joints).
+    
+    Returns only the 7 Franka arm joints (panda_joint1-7), excluding gripper joints.
+    
+    Returns:
+        torch.Tensor: Arm joint velocities, shape (num_envs, 7)
+    """
+    from isaaclab.assets import Articulation
+    
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Get all joint names
+    joint_names = asset.data.joint_names
+    
+    # Find indices of arm joints (panda_joint1 through panda_joint7)
+    arm_joint_indices = []
+    for i, name in enumerate(joint_names):
+        if name.startswith("panda_joint") and name[-1].isdigit():
+            # This is an arm joint (panda_joint1-7)
+            arm_joint_indices.append(i)
+    
+    # Return arm joint velocities relative to default
+    arm_joint_indices = torch.tensor(arm_joint_indices, device=asset.device)
+    return asset.data.joint_vel[:, arm_joint_indices] - asset.data.default_joint_vel[:, arm_joint_indices]
+
+
+def gripper_state_binary(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"), 
+                         threshold: float = 0.4) -> torch.Tensor:
+    """Binary gripper state: 0 = open, 1 = closed.
+    
+    Uses the outer_knuckle_joint positions to determine if gripper is open or closed.
+    
+    Args:
+        env: The environment instance
+        asset_cfg: Configuration for the robot asset
+        threshold: Joint position threshold to determine closed state (default: 0.4 radians)
+    
+    Returns:
+        torch.Tensor: Binary gripper state, shape (num_envs, 1)
+            0 = open (joint position < threshold)
+            1 = closed (joint position >= threshold)
+    """
+    from isaaclab.assets import Articulation
+    
+    asset: Articulation = env.scene[asset_cfg.name]
+    
+    # Get all joint names
+    joint_names = asset.data.joint_names
+    
+    # Find gripper joint indices (outer_knuckle_joints)
+    gripper_joint_indices = []
+    for i, name in enumerate(joint_names):
+        if "outer_knuckle_joint" in name:
+            gripper_joint_indices.append(i)
+    
+    if len(gripper_joint_indices) == 0:
+        # Fallback: return zeros if no gripper joints found
+        return torch.zeros(asset.num_instances, 1, device=asset.device)
+    
+    # Get average gripper joint position
+    gripper_joint_indices = torch.tensor(gripper_joint_indices, device=asset.device)
+    gripper_pos = asset.data.joint_pos[:, gripper_joint_indices].mean(dim=1)
+    
+    # Threshold to binary: 0 if open, 1 if closed
+    gripper_binary = (gripper_pos >= threshold).float()
+    
+    return gripper_binary.unsqueeze(-1)  # shape: (num_envs, 1)
+
 
 def cube_yaw_angle(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Current yaw angle of the cube (rotation around Z-axis).
