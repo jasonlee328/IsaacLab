@@ -357,7 +357,7 @@ class NudgeObservationsCfg:
         # joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
         joint_pos = ObsTerm(func=push_observations.arm_joint_pos_rel)
         joint_vel = ObsTerm(func=push_observations.arm_joint_vel_rel)
-        gripper_pos = ObsTerm(func=push_observations.gripper_pos)
+        gripper_pos = ObsTerm(func=push_observations.gripper_state_binary)
         ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
         ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
         
