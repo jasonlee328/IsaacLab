@@ -105,9 +105,6 @@ def main(env_cfg, agent_cfg) -> None:
     env_cfg.recorders.dataset_filename = output_file_name
     env_cfg.recorders.dataset_export_mode = DatasetExportMode.EXPORT_SUCCEEDED_ONLY
     env_cfg.recorders.dataset_file_handler_class_type = TorchDatasetFileHandler
-    # Defer flushing to accumulate all successful states in memory and save once at the end
-    # This eliminates the O(n²) I/O problem - we only store successful state snapshots, not full episodes
-    env_cfg.recorders.defer_flush = True
 
     # create environment
     env = cast(ManagerBasedRLEnv, gym.make(args_cli.task, cfg=env_cfg)).unwrapped

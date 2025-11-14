@@ -39,7 +39,7 @@ FRANKA_ROBOTIQ_2F85_RELATIVE_OSC = PreprocessedOperationalSpaceControllerActionC
     ),
     # Increased action scaling for better exploration (1.5x position, 1.5x rotation)
     # This allows larger movements per action, helping the policy explore more effectively
-    scale_xyz_axisangle=(0.02, 0.02, 0.02, 0.02, 0.02, 0.2),
+    scale_xyz_axisangle=(0.04, 0.04, 0.04, 0.04, 0.04, 0.2),
     input_clip=(-1.0, 1.0),
     controller_cfg=OperationalSpaceControllerCfg(
         target_types=["pose_rel"],

@@ -552,8 +552,13 @@ while [[ $# -gt 0 ]]; do
                 shift # past argument
             fi
             # install the learning frameworks specified
-            ${pip_command} -e "${ISAACLAB_PATH}/source/isaaclab_rl[${framework_name}]"
-            ${pip_command} -e "${ISAACLAB_PATH}/source/isaaclab_mimic[${framework_name}]"
+            # For rsl-rl, uninstall any existing version first to ensure we use the git URL from setup.py
+            if [ "${framework_name}" = "all" ] || [ "${framework_name}" = "rsl-rl" ] || [ "${framework_name}" = "rsl_rl" ]; then
+                echo "[INFO] Uninstalling existing rsl-rl-lib to ensure installation from git fork..."
+                ${pip_uninstall_command} rsl-rl-lib rsl_rl_lib rsl_rl 2>/dev/null || true
+            fi
+            ${pip_command} -e "${ISAACLAB_PATH}/source/isaaclab_rl[${framework_name}]" --no-cache-dir
+            ${pip_command} -e "${ISAACLAB_PATH}/source/isaaclab_mimic[${framework_name}]" --no-cache-dir
 
             # in some rare cases, torch might not be installed properly by setup.py, add one more check here
             # can prevent that from happening

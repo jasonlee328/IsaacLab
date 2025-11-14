@@ -36,7 +36,7 @@ class Base_PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         critic_hidden_dims=[512, 256, 128, 64],
         activation="elu",
         noise_std_type="gsde",
-        state_dependent_std=True,
+        state_dependent_std=False,  # gsde only supported when state_dependent_std=False in commit cae6402
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=1.0,

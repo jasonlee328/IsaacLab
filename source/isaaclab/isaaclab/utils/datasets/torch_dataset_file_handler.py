@@ -91,15 +91,6 @@ class TorchDatasetFileHandler(DatasetFileHandlerBase):
     def flush(self):
         """Flush any pending data to disk."""
         if self._file_path and self._episode_data:
-            # Convert lists to tensors before saving (similar to EpisodeData.pre_export)
-            def convert_lists_to_tensors(data):
-                for key, value in data.items():
-                    if isinstance(value, dict):
-                        convert_lists_to_tensors(value)
-                    elif isinstance(value, list) and len(value) > 0:
-                        data[key] = torch.stack(value)
-            
-            convert_lists_to_tensors(self._episode_data)
             torch.save(self._episode_data, self._file_path)
 
     def close(self):

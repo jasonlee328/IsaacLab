@@ -50,11 +50,6 @@ class RecorderManagerBaseCfg:
     export_in_record_pre_reset: bool = True
     """Whether to export episodes in the record_pre_reset call."""
 
-    defer_flush: bool = False
-    """If True, accumulate all successful episodes in memory and only flush at close/end.
-    This eliminates the O(n²) I/O problem by saving once at the end instead of incrementally.
-    Only use when you have sufficient memory for all successful states (typically fine for state snapshots)."""
-
 
 class RecorderTerm(ManagerTermBase):
     """Base class for recorder terms.
@@ -210,13 +205,6 @@ class RecorderManager(ManagerBase):
         # Do nothing if no active recorder terms are provided
         if len(self.active_terms) == 0:
             return
-
-        # If deferring flush, ensure we flush before closing
-        if hasattr(self, "cfg") and hasattr(self.cfg, "defer_flush") and self.cfg.defer_flush:
-            if self._dataset_file_handler is not None:
-                self._dataset_file_handler.flush()
-            if self._failed_episode_dataset_file_handler is not None:
-                self._failed_episode_dataset_file_handler.flush()
 
         if self._dataset_file_handler is not None:
             self._dataset_file_handler.close()
@@ -508,8 +496,7 @@ class RecorderManager(ManagerBase):
             # Reset the episode buffer for the given environment after export
             self._episodes[env_id] = EpisodeData()
 
-        if need_to_flush and not (hasattr(self.cfg, "defer_flush") and self.cfg.defer_flush):
-            # Only flush if not deferring - when deferring, accumulate in memory and save at end
+        if need_to_flush:
             if self._dataset_file_handler is not None:
                 self._dataset_file_handler.flush()
             if self._failed_episode_dataset_file_handler is not None:
@@ -534,7 +521,6 @@ class RecorderManager(ManagerBase):
                 "dataset_export_dir_path",
                 "dataset_export_mode",
                 "export_in_record_pre_reset",
-                "defer_flush",
             ]:
                 continue
             # check if term config is None
