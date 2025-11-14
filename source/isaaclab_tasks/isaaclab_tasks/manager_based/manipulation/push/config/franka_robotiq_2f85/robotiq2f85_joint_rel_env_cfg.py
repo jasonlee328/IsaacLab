@@ -145,18 +145,18 @@ class CustomEventCfg:
         mode="reset",
         params={
             # Custom Robotiq gripper has 13 joints total (see GitHub #1299)
-            # "default_pose": [
-            #     0.0, 0.93, 0.0, -1.27, 0.0, 2.17, 0.0,  # 7 arm joints
-            #     0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
-            #     0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
-            #     0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
-            # ]
-         "default_pose": [
-                0.0, 0.50, 0.0, -2.03, 0.0, 2.6, 0.0,  # 7 arm joints
+            "default_pose": [
+                0.0, 0.93, 0.0, -1.27, 0.0, 2.17, 0.0,  # 7 arm joints
                 0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
                 0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
                 0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
             ]
+        #  "default_pose": [
+        #         0.0, 0.50, 0.0, -2.03, 0.0, 2.6, 0.0,  # 7 arm joints
+        #         0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
+        #         0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
+        #         0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
+        #     ]
         },
     )
 
@@ -280,7 +280,7 @@ class FrankaRobotiq2f85RLStateCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         self.decimation = 10  # 10Hz control
-        self.episode_length_s = 10.0  # 10 second episodes
+        self.episode_length_s = 5.0  # 10 second episodes
         self.sim.dt =  0.01 
         self.sim.render_interval = self.decimation
         self.sim.physx.bounce_threshold_velocity = 0.2
@@ -444,7 +444,7 @@ class FrankaRobotiq2f85CustomOmniNudgeEnvCfg(FrankaRobotiq2f85CustomOmniRelTrain
         threshold = 0.01  
         orientation_threshold = 0.0173  
         distractor_distance_threshold = 0.02
-        distractor_orientation_threshold = 0.1
+        distractor_orientation_threshold = 0.0173
         
         
         self.scene.distractor_1 = RigidObjectCfg(
@@ -500,7 +500,7 @@ class FrankaRobotiq2f85CustomOmniNudgeEnvCfg(FrankaRobotiq2f85CustomOmniRelTrain
         )
         
 
-############# PUSH; #############
+############# PUSH TASK #############
 
 
   
@@ -585,7 +585,7 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
 
         
         ##### EVENTS #####
-        cube_x_range = (0.625, 0.625) 
+        cube_x_range = (0.725, 0.725) 
         cube_y_range = (0.0, 0.0)
         distractor_min_distance = 0.10
         distractor_max_distance = 0.20
@@ -597,8 +597,8 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
     
         
         ##### REWARDS #####
-        threshold = 0.01  
-        orientation_threshold = 0.0173  
+        threshold = 0.05  
+        orientation_threshold = 3.14  
         distractor_distance_threshold = 0.02
         distractor_orientation_threshold = 0.1
         
@@ -663,7 +663,7 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
 
 
 
-############# FLIP; #############
+############# FLIP TASK #############
 
 
 
@@ -767,9 +767,9 @@ class FrankaRobotiq2f85CustomOmniFlipEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
     
         
         ##### REWARDS #####
-        threshold = 0.01  
+        threshold = 0.05  
         orientation_threshold = 0.0173  
-        distractor_distance_threshold = 0.02
+        distractor_distance_threshold = 0.05
         distractor_orientation_threshold = 0.1
         
         

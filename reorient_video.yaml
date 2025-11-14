@@ -1,5 +1,5 @@
 version: v2
-description: isaac-lab-push
+description: Blocks-Robotiq2f85-CustomOmni-Nudge
 budget: ai2/robots
 tasks:
 - name: eval
@@ -14,9 +14,9 @@ tasks:
     cd /weka/oe-training-default/jasonl/IsaacLab &&
     echo "Y" | ./isaaclab.sh --install &&
     echo "Y" | ./isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
-        --task Blocks-Robotiq2f85-CustomOmni-Reorient \
+        --task Blocks-Robotiq2f85-CustomOmni-Nudge \
         --num_envs 1   \
-        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_robotiq_2f85/2025-10-27_07-01-41_Blocks-Robotiq2f85-CustomOmni-Reorient-90-3cm-tcp-pat/model_5900.pt \
+        --checkpoint /weka/oe-training-default/jasonl/IsaacLab/logs/rsl_rl/franka_robotiq_2f85/2025-11-13_03-29-19_Blocks-Robotiq2f85-CustomOmni-Reorient-min005-max010-dist005-50steps/model_4800.pt \
         --video --video_length 1600 --headless
  
   datasets:

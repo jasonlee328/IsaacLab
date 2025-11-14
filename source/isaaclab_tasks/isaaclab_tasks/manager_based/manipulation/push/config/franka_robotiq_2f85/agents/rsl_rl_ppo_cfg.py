@@ -10,7 +10,7 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class Base_PPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 100
+    num_steps_per_env = 50
     max_iterations = 40000
     save_interval = 100
     experiment_name = "franka_robotiq_2f85"
@@ -35,7 +35,7 @@ class Base_PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         num_mini_batches=4,
         learning_rate=3.0e-4,
         schedule="constant",
-        gamma=0.99,
+        gamma=0.98,
         lam=0.9,
         desired_kl=0.1,
         max_grad_norm=0.5,
