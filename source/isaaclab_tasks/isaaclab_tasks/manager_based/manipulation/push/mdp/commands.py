@@ -154,13 +154,33 @@ class ObjectRelativePoseCommand(CommandTerm):
 
         # Handle orientation
         if not self.cfg.position_only:
-            # Sample random orientation
-            euler_angles = torch.zeros_like(self.pose_command_b[env_ids, :3])
-            euler_angles[:, 0].uniform_(*self.cfg.ranges.roll)
-            euler_angles[:, 1].uniform_(*self.cfg.ranges.pitch)
-            euler_angles[:, 2].uniform_(*self.cfg.ranges.yaw)
-            quat = quat_from_euler_xyz(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
-            self.pose_command_b[env_ids, 3:] = quat_unique(quat) if self.cfg.make_quat_unique else quat
+            if self.cfg.discrete_orientation_options is not None:
+                # Sample from discrete orientation options
+                num_envs = len(env_ids)
+                num_options = len(self.cfg.discrete_orientation_options)
+                
+                # Randomly select one option per environment
+                option_indices = torch.randint(0, num_options, (num_envs,), device=self.device)
+                
+                # Build euler angles from selected options
+                euler_angles = torch.zeros(num_envs, 3, device=self.device)
+                for i, idx in enumerate(option_indices):
+                    roll, pitch, yaw = self.cfg.discrete_orientation_options[idx]
+                    euler_angles[i, 0] = roll
+                    euler_angles[i, 1] = pitch
+                    euler_angles[i, 2] = yaw
+                
+                # Convert to quaternion
+                quat = quat_from_euler_xyz(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
+                self.pose_command_b[env_ids, 3:] = quat_unique(quat) if self.cfg.make_quat_unique else quat
+            else:
+                # Sample random orientation from continuous ranges
+                euler_angles = torch.zeros_like(self.pose_command_b[env_ids, :3])
+                euler_angles[:, 0].uniform_(*self.cfg.ranges.roll)
+                euler_angles[:, 1].uniform_(*self.cfg.ranges.pitch)
+                euler_angles[:, 2].uniform_(*self.cfg.ranges.yaw)
+                quat = quat_from_euler_xyz(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
+                self.pose_command_b[env_ids, 3:] = quat_unique(quat) if self.cfg.make_quat_unique else quat
         else:
             # Position-only mode: keep current orientation
             self.pose_command_b[env_ids, 3:] = object_quat_b
@@ -341,6 +361,11 @@ class ObjectRelativePoseCommandCfg(CommandTermCfg):
 
     ranges: Ranges = Ranges()
     """Orientation ranges for sampling (only used if position_only=False)."""
+
+    discrete_orientation_options: list[tuple[float, float, float]] | None = None
+    """List of discrete orientation options (roll, pitch, yaw) in radians.
+    If specified, randomly samples from these discrete options instead of continuous ranges.
+    Example: [(1.5708, 0.0, 0.0), (-1.5708, 0.0, 0.0)] for ±90° roll options."""
 
 
 class PushObjectDistractorAwareCommand(CommandTerm):

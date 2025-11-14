@@ -528,6 +528,31 @@ def cube_yaw_angle(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.T
     return yaw.unsqueeze(-1)  # shape: (num_envs, 1)
 
 
+def cube_orientation_euler(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Current orientation of the cube as euler angles (roll, pitch, yaw).
+    
+    Extracts the full orientation from the cube's quaternion as euler angles.
+    This is useful for flip/reorientation tasks where all rotation axes matter.
+    
+    Returns:
+        torch.Tensor: Euler angles (roll, pitch, yaw) in radians, shape (num_envs, 3)
+    """
+    from isaaclab.assets import RigidObject
+    from isaaclab.utils.math import euler_xyz_from_quat
+    
+    # Get the cube asset
+    cube: RigidObject = env.scene[asset_cfg.name]
+    
+    # Get cube quaternion (w, x, y, z)
+    quat = cube.data.root_quat_w  # shape: (num_envs, 4)
+    
+    # Convert quaternion to euler angles
+    roll, pitch, yaw = euler_xyz_from_quat(quat)
+    
+    # Stack into single tensor
+    return torch.stack([roll, pitch, yaw], dim=-1)  # shape: (num_envs, 3)
+
+
 def target_yaw_angle(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
     """Target yaw angle from the command manager.
     
@@ -546,6 +571,29 @@ def target_yaw_angle(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
     yaw = torch.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
     
     return yaw.unsqueeze(-1)  # shape: (num_envs, 1)
+
+
+def target_orientation_euler(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
+    """Target orientation as euler angles (roll, pitch, yaw) from the command manager.
+    
+    Extracts the full target orientation from the command as euler angles.
+    This is useful for flip/reorientation tasks where all rotation axes matter.
+    
+    Returns:
+        torch.Tensor: Target euler angles (roll, pitch, yaw) in radians, shape (num_envs, 3)
+    """
+    from isaaclab.utils.math import euler_xyz_from_quat
+    
+    command_term = env.command_manager.get_term(command_name)
+    
+    # Get target quaternion in world frame
+    goal_quat = command_term.pose_command_w[:, 3:]  # shape: (num_envs, 4)
+    
+    # Convert quaternion to euler angles
+    roll, pitch, yaw = euler_xyz_from_quat(goal_quat)
+    
+    # Stack into single tensor
+    return torch.stack([roll, pitch, yaw], dim=-1)  # shape: (num_envs, 3)
 
 
 def orientation_delta(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, command_name: str) -> torch.Tensor:

@@ -623,6 +623,7 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
         self.observations = PushObservationsCfg()
         self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
         self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
+   
         self.push_distractor_config = {
             "distractor_1_cfg": SceneEntityCfg("distractor_1"),
             "distractor_2_cfg": None,
@@ -665,7 +666,171 @@ class FrankaRobotiq2f85CustomOmniPushEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainC
 
 
 
+@configclass
+class FlipObservationsCfg:
+    """Custom observation specifications for the reorientation task.
+    
+    This includes full orientation (roll, pitch, yaw) observations that are
+    suitable for learning flip/reorientation tasks where all rotation axes matter.
+    """
+    
+    @configclass
+    class PolicyCfg(ObsGroup):
+        """Observations for policy group - optimized for reorientation."""
+        
+        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        
+        ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
+        ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
+        
+        # Cube observations - full orientation (roll, pitch, yaw)
+        cube_pos = ObsTerm(func=push_observations.cube_pos_rel, params={"asset_cfg": SceneEntityCfg("cube")})
+        cube_orientation = ObsTerm(func=push_observations.cube_orientation_euler, params={"asset_cfg": SceneEntityCfg("cube")})
+        
+        # Target observations - full orientation (roll, pitch, yaw)
+        target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
+        target_orientation = ObsTerm(func=push_observations.target_orientation_euler, params={"command_name": "ee_pose"})
+        
+        # Key observation: signed angular difference (most important for learning!)
+        orientation_delta = ObsTerm(
+            func=push_observations.orientation_delta,
+            params={"asset_cfg": SceneEntityCfg("cube"), "command_name": "ee_pose"}
+        )
+        
+        # Cube position relative to goal (frame-invariant)
+        cube_pos_goal = ObsTerm(
+            func=push_observations.cube_in_target_frame,
+            params={"command_name": "ee_pose", "asset_cfg": SceneEntityCfg("cube")}
+        )
+        
+        # Distractor observations (current state)
+        distractor_positions = ObsTerm(
+            func=push_observations.distractor_positions_rel,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1")
+            }
+        )
+        
+        # distractor_orientations = ObsTerm(
+        #     func=push_observations.distractor_orientations_current,
+        #     params={
+        #         "distractor_1_cfg": SceneEntityCfg("distractor_1")
+        #     }
+        # )
+        
+        # Distractor initial poses (target state to maintain)
+        distractor_initial_positions = ObsTerm(
+            func=push_observations.distractor_initial_positions_rel,
+            params={
+                "distractor_1_cfg": SceneEntityCfg("distractor_1")
+            }
+        )
+        
+        # distractor_initial_orientations = ObsTerm(
+        #     func=push_observations.distractor_initial_orientations,
+        #     params={
+        #         "distractor_1_cfg": SceneEntityCfg("distractor_1")
+        #     }
+        # )
+        
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+    
+    policy: PolicyCfg = PolicyCfg()
+    
 
+
+@configclass
+class FrankaRobotiq2f85CustomOmniFlipEnvCfg(FrankaRobotiq2f85CustomOmniRelTrainCfg):
+    """Configuration for reorientation task with Franka + Robotiq gripper with distractors."""
+    
+    def __post_init__(self):
+
+        super().__post_init__()
+        
+
+        
+        ##### EVENTS #####
+        cube_x_range = (0.625, 0.625) 
+        cube_y_range = (0.0, 0.0)
+        cube_yaw_range = (0.0, 0.0)
+        distractor_distance = 0.0470
+        
+        ##### COMMANDS #####
+        min_radius = 0.00
+        max_radius = 0.00
+        # yaw_range = (-1.57, 1.57)  
+    
+        
+        ##### REWARDS #####
+        threshold = 0.01  
+        orientation_threshold = 0.0173  
+        distractor_distance_threshold = 0.02
+        distractor_orientation_threshold = 0.1
+        
+        
+        self.scene.distractor_1 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Distractor1",
+            init_state=RigidObjectCfg.InitialStateCfg(
+                pos=[0.5, 0.1, 0.0203],  # Will be positioned by event
+                rot=[1, 0, 0, 0]
+            ),
+            spawn=UsdFileCfg(
+                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",  # Red for distractors
+                scale=(1.0, 1.0, 1.0),
+                rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
+                    max_angular_velocity=1000.0,
+                    max_linear_velocity=1000.0,
+                    max_depenetration_velocity=5.0,
+                    disable_gravity=False,
+                ),
+            ),
+        )
+        self.observations = FlipObservationsCfg()
+        self.events.randomize_cube_position.params["pose_range"]["x"] = cube_x_range
+        self.events.randomize_cube_position.params["pose_range"]["y"] = cube_y_range
+        self.events.randomize_cube_position.params["pose_range"]["yaw"] = cube_yaw_range
+        self.nudge_distractor_config = {
+            "distractor_1_cfg": SceneEntityCfg("distractor_1"),
+            "distractor_2_cfg": None,
+            "command_name": "ee_pose",
+            "distractor_distance": distractor_distance,  
+        }
+        
+
+
+        self.commands.ee_pose.position_only = False  
+        self.commands.ee_pose.success_threshold = threshold
+        self.commands.ee_pose.min_radius = min_radius
+        self.commands.ee_pose.max_radius = max_radius
+        # Discrete flip options: 4 ways to flip the cube by 90 degrees
+        self.commands.ee_pose.discrete_orientation_options = [
+            (1.5708, 0.0, 0.0),   # Roll right 90° (left face to top)
+            (-1.5708, 0.0, 0.0),  # Roll left 90° (right face to top)
+            (0.0, 1.5708, 0.0),   # Pitch forward 90° (back face to top)
+            (0.0, -1.5708, 0.0),  # Pitch backward 90° (front face to top)
+        ]
+        self.rewards.reaching_goal = None  
+        self.rewards.distance_orientation_goal_distractors = RwdTerm(
+            func=push_mdp.distance_orientation_goal_with_distractors,
+            params={
+                "object_cfg": SceneEntityCfg("cube"),
+                "goal_cfg": "ee_pose",
+                "distractor_cfgs": [
+                    SceneEntityCfg("distractor_1"),
+                ],
+                "distance_threshold": threshold,
+                "orientation_threshold": orientation_threshold,
+                "distractor_distance_threshold": distractor_distance_threshold, 
+                "distractor_orientation_threshold": distractor_orientation_threshold, 
+            },
+            weight=1.0, 
+        )
+        
 
 
 

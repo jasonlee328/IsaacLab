@@ -11,14 +11,12 @@ args_cli = parser.parse_args()
 
 app_launcher = isaaclab.app.AppLauncher(args_cli)
 simulation_app = app_launcher.app
-
-# Now we can import Isaac Sim modules
 from pxr import UsdGeom, Usd, Gf
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 import numpy as np
 
 # Path to red block
-red_block_path = f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+red_block_path = f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
 
 print(f"Checking USD file: {red_block_path}")
 print("="*70)
