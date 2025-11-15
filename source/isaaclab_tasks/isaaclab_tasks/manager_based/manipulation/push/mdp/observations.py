@@ -556,10 +556,11 @@ def distractor_yaw_initial(env: ManagerBasedRLEnv,
 # Reorientation-specific observations
 ##
 
-def arm_joint_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+def arm_joint_pos(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Arm joint positions only (excludes gripper joints).
     
     Returns only the 7 Franka arm joints (panda_joint1-7), excluding gripper joints.
+    Returns ABSOLUTE positions (not relative to default).
     
     Returns:
         torch.Tensor: Arm joint positions, shape (num_envs, 7)
@@ -578,15 +579,18 @@ def arm_joint_pos_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneE
             # This is an arm joint (panda_joint1-7)
             arm_joint_indices.append(i)
     
-    # Return arm joint positions relative to default
+    # Return arm joint positions (absolute, not relative)
     arm_joint_indices = torch.tensor(arm_joint_indices, device=asset.device)
-    return asset.data.joint_pos[:, arm_joint_indices] - asset.data.default_joint_pos[:, arm_joint_indices]
+    return asset.data.joint_pos[:, arm_joint_indices]
 
 
-def arm_joint_vel_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
+
+
+def arm_joint_vel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")) -> torch.Tensor:
     """Arm joint velocities only (excludes gripper joints).
     
     Returns only the 7 Franka arm joints (panda_joint1-7), excluding gripper joints.
+    Returns ABSOLUTE velocities (not relative to default).
     
     Returns:
         torch.Tensor: Arm joint velocities, shape (num_envs, 7)
@@ -605,9 +609,9 @@ def arm_joint_vel_rel(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneE
             # This is an arm joint (panda_joint1-7)
             arm_joint_indices.append(i)
     
-    # Return arm joint velocities relative to default
+    # Return arm joint velocities (absolute, not relative)
     arm_joint_indices = torch.tensor(arm_joint_indices, device=asset.device)
-    return asset.data.joint_vel[:, arm_joint_indices] - asset.data.default_joint_vel[:, arm_joint_indices]
+    return asset.data.joint_vel[:, arm_joint_indices]
 
 
 def gripper_state_binary(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"), 

@@ -6,8 +6,8 @@ from tensordict import TensorDict
 from rsl_rl.runners import OnPolicyRunner
 
 # Configuration
-checkpoint_path = "/home/jason/IsaacLab/logs/rsl_rl/franka_robotiq_2f85/model_15700.pt"
-obs_dim = 48
+checkpoint_path = "/home/jason/IsaacLab/logs/rsl_rl/franka_robotiq_2f85/model_1700.pt"
+obs_dim = 45
 device = "cuda:0"
 
 print(f"Loading checkpoint: {checkpoint_path}")
@@ -19,7 +19,17 @@ class DummyEnv:
     device = device
     
     def get_observations(self):
-        return TensorDict({"policy": torch.zeros(self.num_envs, obs_dim, device=device)}, batch_size=[1])
+        # return TensorDict({"policy": torch.zeros(self.num_envs, obs_dim, device=device)}, batch_size=[1])
+        return TensorDict({'policy': torch.tensor([[ 4.0694e-03,  1.3767e-03,  9.4668e-04, -4.1459e-03,  1.8414e-02,
+          2.2905e-03, -4.8596e-03,  6.4868e-02,  2.8641e-02,  2.6248e-02,
+         -6.7317e-02,  1.9198e-01,  1.6404e-02, -4.8287e-02,  0.0000e+00,
+          6.1471e-01,  4.0290e-03,  6.6459e-02, -5.2168e-03,  9.9943e-01,
+         -2.8685e-03,  3.3375e-02,  6.2402e-01,  4.4779e-07,  2.0296e-02,
+          1.6469e-01,  5.7556e-01,  7.4428e-03,  2.0300e-02,  1.5595e+00,
+          1.3948e+00, -6.8958e-03, -4.8546e-02, -4.2971e-06, -1.1635e-06,
+         -3.1681e-07, -1.3948e+00,  5.7506e-01, -3.8721e-02,  2.0296e-02,
+          1.5624e+00,  5.7556e-01, -3.9557e-02,  2.0300e-02,  1.5595e+00]],
+       device='cuda:0')}, batch_size=[1])
 
 # Minimal config
 config = {
@@ -44,7 +54,7 @@ config = {
         "init_noise_std": 0.6,
         "actor_hidden_dims": [256, 256, 256],
         "critic_hidden_dims": [256, 256, 256],
-        "activation": "elu",
+        "activation": "tanh",
         "actor_obs_normalization": True,
         "critic_obs_normalization": True,
     },
@@ -81,3 +91,4 @@ while True:
     actions = policy(obs)
     print(f"Step {step}: {actions[0].detach().cpu().numpy()}")
     step += 1
+    break

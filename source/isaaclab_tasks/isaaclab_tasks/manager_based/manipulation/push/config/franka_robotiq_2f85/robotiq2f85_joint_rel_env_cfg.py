@@ -145,18 +145,18 @@ class CustomEventCfg:
         mode="reset",
         params={
             # Custom Robotiq gripper has 13 joints total (see GitHub #1299)
-            "default_pose": [
-                0.0, 0.93, 0.0, -1.27, 0.0, 2.17, 0.0,  # 7 arm joints
+            # "default_pose": [
+            #     0.0, 0.93, 0.0, -1.27, 0.0, 2.17, 0.0,  # 7 arm joints
+            #     0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
+            #     0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
+            #     0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
+            # ]
+         "default_pose": [
+                0.0, 0.50, 0.0, -2.03, 0.0, 2.6, 0.0,  # 7 arm joints
                 0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
                 0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
                 0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
             ]
-        #  "default_pose": [
-        #         0.0, 0.50, 0.0, -2.03, 0.0, 2.6, 0.0,  # 7 arm joints
-        #         0.0, 0.0,  # right_outer_knuckle_joint, left_outer_knuckle_joint
-        #         0.0, 0.0,  # right_inner_finger_joint, left_inner_finger_joint
-        #         0.0, 0.0,  # RevoluteJoint, RevoluteJoint_0 (unnamed passive joints)
-        #     ]
         },
     )
 
@@ -355,8 +355,8 @@ class NudgeObservationsCfg:
         
         # joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
         # joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
-        joint_pos = ObsTerm(func=push_observations.arm_joint_pos_rel)
-        joint_vel = ObsTerm(func=push_observations.arm_joint_vel_rel)
+        joint_pos = ObsTerm(func=push_observations.arm_joint_pos)
+        joint_vel = ObsTerm(func=push_observations.arm_joint_vel)
         gripper_pos = ObsTerm(func=push_observations.gripper_state_binary)
         ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
         ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
@@ -516,8 +516,9 @@ class PushObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group - optimized for reorientation."""
         
-        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
-        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        # joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
+        joint_pos = ObsTerm(func=push_observations.arm_joint_pos)
+        joint_vel = ObsTerm(func=push_observations.arm_joint_vel)
         
         ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
         ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
@@ -680,8 +681,8 @@ class FlipObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group - optimized for reorientation."""
         
-        joint_pos = ObsTerm(func=isaaclab_mdp.joint_pos_rel)
-        joint_vel = ObsTerm(func=isaaclab_mdp.joint_vel_rel)
+        joint_pos = ObsTerm(func=push_observations.arm_joint_pos)
+        joint_vel = ObsTerm(func=push_observations.arm_joint_vel)
         
         ee_pos = ObsTerm(func=push_observations.ee_frame_pos_rel)
         ee_quat = ObsTerm(func=push_observations.ee_frame_quat_rel)
@@ -694,11 +695,11 @@ class FlipObservationsCfg:
         target_pos = ObsTerm(func=push_observations.target_pos_rel, params={"command_name": "ee_pose"})
         target_orientation = ObsTerm(func=push_observations.target_orientation_euler, params={"command_name": "ee_pose"})
         
-        # Key observation: signed angular difference (most important for learning!)
-        orientation_delta = ObsTerm(
-            func=push_observations.orientation_delta,
-            params={"asset_cfg": SceneEntityCfg("cube"), "command_name": "ee_pose"}
-        )
+        # # Key observation: signed angular difference (most important for learning!)
+        # orientation_delta = ObsTerm(
+        #     func=push_observations.orientation_delta,
+        #     params={"asset_cfg": SceneEntityCfg("cube"), "command_name": "ee_pose"}
+        # )
         
         # Cube position relative to goal (frame-invariant)
         cube_pos_goal = ObsTerm(

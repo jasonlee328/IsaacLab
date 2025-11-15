@@ -108,12 +108,12 @@ def main():
     
     # reset environment
     obs, _ = env.reset()
-    print(f"[INFO]: Observation dimension: {obs.shape[-1]}")
-    print("[INFO]: Environment reset - observe target position")
+    # print(f"[INFO]: Observation dimension: {obs.shape[-1]}")
+    # print("[INFO]: Environment reset - observe target position")
     
     # simulate environment
     step_count = 0
-    reset_interval = 10
+    reset_interval = 50
     # Reset every 200 steps to see randomization
     
     # Get wrist body index for contact force reading
@@ -134,7 +134,9 @@ def main():
         with torch.inference_mode():
             if policy is not None:
                 # Use checkpoint inference
+                print(f"[INFO]: Obs: {obs}")
                 actions = policy(obs)
+                print(f"[INFO]: Actions: {actions}")
         
             else:
                 # Fallback to random actions
@@ -142,6 +144,7 @@ def main():
             
             # apply actions
             obs, _, _, _, _ = env.step(actions)
+            
             
             # Read and display contact information for wrist
             if step_count % 1 == 0 and wrist_body_idx is not None:
